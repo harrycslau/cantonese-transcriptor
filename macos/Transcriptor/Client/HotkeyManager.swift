@@ -61,7 +61,8 @@ class HotkeyManager: ObservableObject {
         if controlDown && !isLeftControlDown {
             isLeftControlDown = true
             if manager.isRecording || manager.isTranscribing { return }
-            manager.startRecording()
+            let frontmost = NSWorkspace.shared.frontmostApplication
+            manager.startRecording(source: .pushToTalk, targetApp: frontmost)
         }
         // Transition: down → up = stop and transcribe
         else if !controlDown && isLeftControlDown {

@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
+import ApplicationServices
 
 enum TranscriptionState {
     case idle
@@ -12,11 +13,29 @@ enum TranscriptionState {
     case error(String)
 }
 
+enum RecordingSource {
+    case none
+    case manual
+    case pushToTalk
+}
+
+struct InsertionContext {
+    let transcript: String
+    let targetApp: NSRunningApplication
+}
+
 @MainActor
 class TranscriptionManager: ObservableObject {
     @Published var state: TranscriptionState = .idle
     @Published var selectedFilePath: String = ""
     @Published var recordingDuration: TimeInterval = 0
+
+    @Published var recordingSource: RecordingSource = .none
+    @Published var targetAppBeforeRecording: NSRunningApplication?
+    @Published var lastInsertionStatus: String?
+    @Published var lastInsertionSucceeded: Bool?
+
+    private var lastInsertionContext: InsertionContext?
 
     private let client = UnixSocketClient()
     private let audioRecorder = AudioRecorder()
@@ -53,7 +72,12 @@ class TranscriptionManager: ObservableObject {
         return false
     }
 
+    var canRetryInsert: Bool {
+        lastInsertionContext != nil && lastInsertionSucceeded == false
+    }
+
     func selectFile() {
+        clearInsertionState()
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
@@ -69,6 +93,7 @@ class TranscriptionManager: ObservableObject {
 
     func transcribe() {
         guard case .fileSelected(let url) = state else { return }
+        clearInsertionState()
         state = .transcribing
 
         Task {
@@ -81,8 +106,10 @@ class TranscriptionManager: ObservableObject {
         }
     }
 
-    func startRecording() {
+    func startRecording(source: RecordingSource, targetApp: NSRunningApplication?) {
         guard case .idle = state else { return }
+        recordingSource = source
+        targetAppBeforeRecording = targetApp
 
         Task {
             do {
@@ -124,6 +151,10 @@ class TranscriptionManager: ObservableObject {
             do {
                 let result = try await client.transcribe(audioPath: recordingPath)
                 state = .success(result)
+
+                if recordingSource == .pushToTalk {
+                    insertTranscript(result)
+                }
             } catch {
                 state = .error(error.localizedDescription)
             }
@@ -132,11 +163,111 @@ class TranscriptionManager: ObservableObject {
         }
     }
 
+    func insertTranscript(_ result: TranscribeResult) {
+        guard let targetApp = targetAppBeforeRecording else {
+            lastInsertionStatus = "No target app"
+            lastInsertionSucceeded = false
+            return
+        }
+
+        if targetApp.bundleIdentifier == Bundle.main.bundleIdentifier {
+            clearInsertionState()
+            return
+        }
+
+        if targetApp.isTerminated {
+            lastInsertionStatus = "Target app closed"
+            lastInsertionSucceeded = false
+            return
+        }
+
+        let trimmed = result.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            lastInsertionStatus = "Nothing recorded"
+            lastInsertionSucceeded = false
+            return
+        }
+
+        guard AXIsProcessTrusted() else {
+            lastInsertionStatus = "Accessibility permission needed"
+            lastInsertionSucceeded = false
+            return
+        }
+
+        let savedClipboard = ClipboardManager.saveCurrent()
+        ClipboardManager.setText(trimmed)
+        let transcriptChangeCount = NSPasteboard.general.changeCount
+
+        lastInsertionContext = InsertionContext(transcript: trimmed, targetApp: targetApp)
+        lastInsertionStatus = "Inserting..."
+        lastInsertionSucceeded = nil
+
+        targetApp.activate(options: [.activateIgnoringOtherApps])
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            let pasted = ClipboardManager.sendPaste()
+            if pasted {
+                self.lastInsertionStatus = "Inserted"
+                self.lastInsertionSucceeded = true
+            } else {
+                self.lastInsertionStatus = "Insertion failed"
+                self.lastInsertionSucceeded = false
+            }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                if let saved = savedClipboard {
+                    ClipboardManager.restoreIfUnchanged(saved, expectedChangeCount: transcriptChangeCount)
+                }
+            }
+        }
+    }
+
+    func retryInsert() {
+        guard let context = lastInsertionContext else { return }
+
+        if context.targetApp.isTerminated {
+            lastInsertionStatus = "Target app closed"
+            lastInsertionSucceeded = false
+            return
+        }
+
+        guard AXIsProcessTrusted() else {
+            lastInsertionStatus = "Accessibility permission needed"
+            lastInsertionSucceeded = false
+            return
+        }
+
+        let savedClipboard = ClipboardManager.saveCurrent()
+        ClipboardManager.setText(context.transcript)
+        let transcriptChangeCount = NSPasteboard.general.changeCount
+
+        lastInsertionStatus = "Inserting..."
+        lastInsertionSucceeded = nil
+
+        context.targetApp.activate(options: [.activateIgnoringOtherApps])
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            let pasted = ClipboardManager.sendPaste()
+            if pasted {
+                self.lastInsertionStatus = "Inserted"
+                self.lastInsertionSucceeded = true
+            } else {
+                self.lastInsertionStatus = "Insertion failed"
+                self.lastInsertionSucceeded = false
+            }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                if let saved = savedClipboard {
+                    ClipboardManager.restoreIfUnchanged(saved, expectedChangeCount: transcriptChangeCount)
+                }
+            }
+        }
+    }
+
     func reset() {
         selectedFilePath = ""
         recordingDuration = 0
         stopping = false
         state = .idle
+        clearInsertionState()
     }
 
     private func startDurationTimer() {
@@ -145,6 +276,14 @@ class TranscriptionManager: ObservableObject {
                 self?.recordingDuration += 0.1
             }
         }
+    }
+
+    private func clearInsertionState() {
+        lastInsertionStatus = nil
+        lastInsertionSucceeded = nil
+        lastInsertionContext = nil
+        recordingSource = .none
+        targetAppBeforeRecording = nil
     }
 }
 
@@ -170,7 +309,7 @@ struct ContentView: View {
 
                 if case .idle = manager.state {
                     Button("Record") {
-                        manager.startRecording()
+                        manager.startRecording(source: .manual, targetApp: nil)
                     }
                 }
 
@@ -186,7 +325,6 @@ struct ContentView: View {
                 }
             }
 
-            // Push-to-talk status row
             HStack {
                 Image(systemName: "waveform")
                 Text("Push-to-talk: hold Left Control")
@@ -208,7 +346,6 @@ struct ContentView: View {
                 .scaleEffect(0.8)
             }
 
-            // Permission warning
             if let warning = hotkeyManager.permissionWarning {
                 Text(warning)
                     .font(.caption)
@@ -272,6 +409,34 @@ struct ContentView: View {
                         LabeledContent("RTF", value: String(format: "%.4f", result.timing.real_time_factor))
                     }
                     .font(.caption)
+
+                    if let status = manager.lastInsertionStatus {
+                        let isSuccess = status == "Inserted"
+                        HStack {
+                            Image(systemName: isSuccess ? "checkmark.circle" : "exclamationmark.triangle")
+                            Text(status)
+                                .font(.caption)
+                                .foregroundColor(isSuccess ? .green : .orange)
+                        }
+                        .padding(6)
+                        .background(isSuccess ? Color.green.opacity(0.1) : Color.orange.opacity(0.1))
+                        .cornerRadius(6)
+                    }
+
+                    HStack {
+                        Button("Copy Transcript") {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(result.transcript, forType: .string)
+                        }
+                        .buttonStyle(.bordered)
+
+                        if manager.canRetryInsert {
+                            Button("Retry Insert") {
+                                manager.retryInsert()
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
 
                     Button("Transcribe Another") {
                         manager.reset()
