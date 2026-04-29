@@ -117,8 +117,12 @@ class TranscriptionManager: ObservableObject {
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
-        panel.allowedContentTypes = [UTType(filenameExtension: "wav") ?? .audio]
-        panel.message = "Select a WAV file to transcribe"
+        panel.allowedContentTypes = [
+            UTType(filenameExtension: "wav") ?? .audio,
+            UTType(filenameExtension: "mp3") ?? .audio,
+            UTType(filenameExtension: "m4a") ?? .mpeg4Audio,
+        ]
+        panel.message = "Select a WAV, MP3, or M4A file to transcribe"
 
         if panel.runModal() == .OK, let url = panel.url {
             selectedFilePath = url.path
@@ -343,8 +347,10 @@ class TranscriptionManager: ObservableObject {
             }
         }
 
+        let ext = url.pathExtension.lowercased()
+        let safeExt = ["wav", "mp3", "m4a"].contains(ext) ? ext : "wav"
         let tempURL = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("selected_\(UUID().uuidString).wav")
+            .appendingPathComponent("selected_\(UUID().uuidString).\(safeExt)")
         try FileManager.default.copyItem(at: url, to: tempURL)
         return tempURL.path
     }
@@ -585,7 +591,7 @@ struct ContentView: View {
 
     private var footerRow: some View {
         HStack(spacing: 8) {
-            Button("Select WAV File") {
+            Button("Select Audio File") {
                 manager.selectFile()
             }
             .buttonStyle(.bordered)

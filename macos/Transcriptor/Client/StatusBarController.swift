@@ -7,11 +7,21 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private let helperManager: HelperManager
     private let hotkeyManager: HotkeyManager
     private let transcriptionManager: TranscriptionManager
+    private let showWindowHandler: () -> Void
+    private let hideWindowHandler: () -> Void
 
-    init(helperManager: HelperManager, hotkeyManager: HotkeyManager, transcriptionManager: TranscriptionManager) {
+    init(
+        helperManager: HelperManager,
+        hotkeyManager: HotkeyManager,
+        transcriptionManager: TranscriptionManager,
+        showWindow: @escaping () -> Void,
+        hideWindow: @escaping () -> Void
+    ) {
         self.helperManager = helperManager
         self.hotkeyManager = hotkeyManager
         self.transcriptionManager = transcriptionManager
+        self.showWindowHandler = showWindow
+        self.hideWindowHandler = hideWindow
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         self.menu = NSMenu()
         super.init()
@@ -22,16 +32,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     func showWindow() {
-        if let window = NSApp.windows.first(where: { !$0.isMiniaturized && $0.canBecomeKey }) {
-            window.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-        }
+        showWindowHandler()
     }
 
     func hideWindow() {
-        if let window = NSApp.windows.first(where: { !$0.isMiniaturized }) {
-            window.orderOut(nil)
-        }
+        hideWindowHandler()
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
