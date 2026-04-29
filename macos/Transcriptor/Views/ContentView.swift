@@ -359,8 +359,8 @@ class TranscriptionManager: ObservableObject {
 
 struct ContentView: View {
     @EnvironmentObject var helperManager: HelperManager
-    @StateObject private var manager = TranscriptionManager()
-    @StateObject private var hotkeyManager = HotkeyManager()
+    @EnvironmentObject var manager: TranscriptionManager
+    @EnvironmentObject var hotkeyManager: HotkeyManager
 
     private func formatDuration(_ duration: TimeInterval) -> String {
         let totalSeconds = Int(duration)
@@ -633,9 +633,6 @@ struct ContentView: View {
         }
         .padding()
         .frame(width: 520, height: 480)
-        .onAppear {
-            hotkeyManager.startListening(transcriptionManager: manager)
-        }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             hotkeyManager.refreshPermissionStatus()
         }

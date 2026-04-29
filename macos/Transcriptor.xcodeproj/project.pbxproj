@@ -14,6 +14,7 @@
 		4424A93D3892F34B0694C90C /* ClipboardManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44D47586757C54B83A989E22 /* ClipboardManager.swift */; };
 		454895F4BDFCCCB74ABC09B9 /* HotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9E8D144F3C1E81FEBF20D0B /* HotkeyManager.swift */; };
 		6FEA30C95A1D582132C2264A /* UnixSocketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60EA89544AC9CD8B8031298 /* UnixSocketClient.swift */; };
+		7415488C11B404ABA4298F15 /* StatusBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CE73DA42F1B032FDF4F51B3 /* StatusBarController.swift */; };
 		946D85E556AD55676C20254F /* TranscribeModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0768AA6B21B880AF48E8B1B /* TranscribeModels.swift */; };
 		9FB597EA3868F9FCCDC41F2D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BD1C92028EB68096F92C74C9 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
@@ -21,6 +22,7 @@
 /* Begin PBXFileReference section */
 		26F5D5C5488BB17BF8F13016 /* Transcriptor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Transcriptor.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		30B4E5E545733B1D5E0651E4 /* TranscriptorApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptorApp.swift; sourceTree = "<group>"; };
+		3CE73DA42F1B032FDF4F51B3 /* StatusBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarController.swift; sourceTree = "<group>"; };
 		4074DEEA6A38C33CCB6EC82E /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		44D47586757C54B83A989E22 /* ClipboardManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardManager.swift; sourceTree = "<group>"; };
 		4518837A8C56A0E657C42AAD /* HelperManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperManager.swift; sourceTree = "<group>"; };
@@ -72,6 +74,7 @@
 				44D47586757C54B83A989E22 /* ClipboardManager.swift */,
 				4518837A8C56A0E657C42AAD /* HelperManager.swift */,
 				C9E8D144F3C1E81FEBF20D0B /* HotkeyManager.swift */,
+				3CE73DA42F1B032FDF4F51B3 /* StatusBarController.swift */,
 				A60EA89544AC9CD8B8031298 /* UnixSocketClient.swift */,
 			);
 			path = Client;
@@ -173,6 +176,7 @@
 				19F8B31A95EFBF87AA5E8143 /* ContentView.swift in Sources */,
 				40D4435B207DFE56B49CE2FD /* HelperManager.swift in Sources */,
 				454895F4BDFCCCB74ABC09B9 /* HotkeyManager.swift in Sources */,
+				7415488C11B404ABA4298F15 /* StatusBarController.swift in Sources */,
 				946D85E556AD55676C20254F /* TranscribeModels.swift in Sources */,
 				2ABC5DB9F6A24C155AAB0559 /* TranscriptorApp.swift in Sources */,
 				6FEA30C95A1D582132C2264A /* UnixSocketClient.swift in Sources */,
