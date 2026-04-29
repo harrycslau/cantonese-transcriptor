@@ -86,7 +86,7 @@ class HotkeyManager: ObservableObject {
         if trusted {
             permissionWarning = nil
         } else {
-            permissionWarning = "Push-to-talk may not work while other apps are focused. Enable Accessibility for Transcriptor in System Settings → Privacy & Security → Accessibility."
+            permissionWarning = "Auto-insert unavailable. Open Settings → enable Accessibility to paste into other apps."
         }
     }
 }

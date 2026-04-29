@@ -153,7 +153,13 @@ class Server:
             resp = protocol.build_success_response(job_id, transcript, timing, data.get("id"))
             conn.sendall((json.dumps(resp) + "\n").encode("utf-8"))
         except Exception as e:
-            logger.exception("Transcription failed")
+            logger.exception(
+                "Transcription failed job_id=%s audio_path=%s exists=%s size=%s",
+                job_id,
+                audio_path,
+                os.path.exists(audio_path),
+                os.path.getsize(audio_path) if os.path.exists(audio_path) else None,
+            )
             resp = protocol.build_error_response(-32603, str(e), job_id, data.get("id"))
             conn.sendall((json.dumps(resp) + "\n").encode("utf-8"))
         finally:

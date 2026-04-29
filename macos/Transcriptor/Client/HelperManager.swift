@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import Darwin
 
 enum HelperState: Equatable {
     case notRunning
@@ -16,15 +17,6 @@ class HelperManager: ObservableObject {
     private var helperStderr = ""
 
     init() {
-        NotificationCenter.default.addObserver(
-            forName: NSApplication.willTerminateNotification,
-            object: nil,
-            queue: nil
-        ) { [weak self] _ in
-            Task { @MainActor in
-                self?.stopHelperIfOwned()
-            }
-        }
         checkHelperHealth()
     }
 
@@ -102,10 +94,39 @@ class HelperManager: ObservableObject {
 
     func stopHelperIfOwned() {
         guard helperStartedByApp else { return }
-        helperProcess?.terminate()
+        guard let process = helperProcess else {
+            helperStartedByApp = false
+            state = .notRunning
+            return
+        }
+
+        process.terminate()
+        if waitForExit(process, timeout: 2.0) {
+            helperProcess = nil
+            helperStartedByApp = false
+            state = .notRunning
+            return
+        }
+
+        // Still running after 2s — SIGKILL it
+        kill(pid_t(process.processIdentifier), SIGKILL)
+        _ = waitForExit(process, timeout: 0.5)
+
+        if process.isRunning {
+            print("Helper did not exit after SIGKILL")
+        }
+
         helperProcess = nil
         helperStartedByApp = false
         state = .notRunning
+    }
+
+    private func waitForExit(_ process: Process, timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while process.isRunning && Date() < deadline {
+            RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.05))
+        }
+        return !process.isRunning
     }
 
     private func handleHelperTermination() {

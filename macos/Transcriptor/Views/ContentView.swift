@@ -76,6 +76,41 @@ class TranscriptionManager: ObservableObject {
         lastInsertionContext != nil && lastInsertionSucceeded == false
     }
 
+    var latestTranscript: String {
+        if case .success(let result) = state {
+            return result.transcript
+        }
+        return ""
+    }
+
+    var latestTiming: TimingInfo? {
+        if case .success(let result) = state {
+            return result.timing
+        }
+        return nil
+    }
+
+    var insertionAppName: String? {
+        lastInsertionContext?.targetApp.localizedName
+    }
+
+    var formattedInsertionStatus: String? {
+        guard let status = lastInsertionStatus else { return nil }
+        let appName = insertionAppName ?? "app"
+        switch status {
+        case "Inserted":
+            return "Inserted into \(appName)"
+        case "Insertion failed":
+            return "Could not insert into \(appName)"
+        case "Accessibility permission needed. Enable it, then quit and reopen Transcriptor.":
+            return "Could not insert into \(appName): Accessibility permission needed"
+        case "Target app closed":
+            return "Could not insert into \(appName): target closed"
+        default:
+            return status
+        }
+    }
+
     func selectFile() {
         clearInsertionState()
         let panel = NSOpenPanel()
@@ -354,24 +389,40 @@ struct ContentView: View {
     }
 
     private var helperStatusRow: some View {
-        HStack {
+        HStack(spacing: 6) {
             Circle()
                 .fill(helperStateColor)
                 .frame(width: 8, height: 8)
             Text(helperStateLabel)
                 .font(.caption)
                 .foregroundColor(.secondary)
+
+            if hotkeyManager.permissionWarning != nil {
+                Button {
+                    openAccessibilitySettings()
+                } label: {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.caption2)
+                        .foregroundColor(.orange)
+                }
+                .buttonStyle(.plain)
+                .help("Accessibility permission needed for auto-insert")
+            }
+
             Spacer()
+
             if case .failed(let msg) = helperManager.state {
                 Button("Retry") {
                     helperManager.startHelper()
                 }
                 .font(.caption)
                 .buttonStyle(.bordered)
-                Text(msg)
+                Text(msg.count > 40 ? String(msg.prefix(40)) + "..." : msg)
                     .font(.caption2)
                     .foregroundColor(.orange)
+                    .lineLimit(1)
             }
+
             if case .notRunning = helperManager.state {
                 Button("Start Helper") {
                     helperManager.startHelper()
@@ -379,6 +430,7 @@ struct ContentView: View {
                 .font(.caption)
                 .buttonStyle(.bordered)
             }
+
             if case .starting = helperManager.state {
                 ProgressView()
                     .scaleEffect(0.5)
@@ -386,83 +438,172 @@ struct ContentView: View {
         }
     }
 
-    var body: some View {
-        VStack(spacing: 20) {
-            HStack(spacing: 12) {
-                Button("Select WAV File") {
-                    manager.selectFile()
-                }
-                .disabled(!manager.canSelectFile)
-
-                if case .idle = manager.state {
-                    Button("Record") {
-                        manager.startRecording(source: .manual, targetApp: nil)
+    private var headerRow: some View {
+        HStack {
+            helperStatusRow
+            Spacer()
+            Toggle("PTT", isOn: Binding(
+                get: { hotkeyManager.isListening },
+                set: { enabled in
+                    if enabled {
+                        hotkeyManager.startListening(transcriptionManager: manager)
+                    } else {
+                        hotkeyManager.stopListening()
                     }
                 }
+            ))
+            .toggleStyle(.switch)
+            .labelsHidden()
+            .scaleEffect(0.8)
+        }
+    }
 
-                if manager.isRecording {
-                    Button("Stop") {
-                        manager.stopAndTranscribe()
-                    }
-                    .disabled(manager.isStopping)
+    private var primaryArea: some View {
+        VStack(spacing: 8) {
+            switch manager.state {
+            case .idle:
+                VStack(spacing: 4) {
+                    Image(systemName: "waveform")
+                        .font(.title)
+                        .foregroundColor(.secondary)
+                    Text("Hold ⌃ to dictate")
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 24)
 
-                    Text("Recording: \(formatDuration(manager.recordingDuration))")
+            case .recording:
+                VStack(spacing: 6) {
+                    Image(systemName: "waveform")
+                        .font(.title)
+                        .foregroundColor(.red)
+                    Text(formatDuration(manager.recordingDuration))
+                        .font(.title2.monospacedDigit())
+                    Text("Release to transcribe")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-            }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 24)
 
-            HStack {
-                Image(systemName: "waveform")
-                Text("Push-to-talk: hold Left Control")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Spacer()
-                Toggle("Enable", isOn: Binding(
-                    get: { hotkeyManager.isListening },
-                    set: { enabled in
-                        if enabled {
-                            hotkeyManager.startListening(transcriptionManager: manager)
-                        } else {
-                            hotkeyManager.stopListening()
-                        }
-                    }
-                ))
-                .toggleStyle(.switch)
-                .labelsHidden()
-                .scaleEffect(0.8)
-            }
-
-            helperStatusRow
-
-            if let warning = hotkeyManager.permissionWarning {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(warning)
-                        .font(.caption)
-                        .foregroundColor(.orange)
-
-                    HStack {
-                        Button("Refresh Permission") {
-                            hotkeyManager.refreshPermissionStatus()
-                        }
-                        .font(.caption)
-
-                        Button("Open Settings") {
-                            openAccessibilitySettings()
-                        }
-                        .font(.caption)
-                    }
+            case .transcribing:
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Text("Transcribing...")
                 }
-                .padding(8)
-                .background(Color.orange.opacity(0.1))
-                .cornerRadius(6)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 24)
+
+            case .fileSelected:
+                Text("Ready to transcribe")
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 24)
+
+            case .success:
+                EmptyView()
+
+            case .error(let message):
+                VStack(spacing: 8) {
+                    Text(message)
+                        .foregroundColor(.red)
+                        .multilineTextAlignment(.center)
+                    Button("Try Again") {
+                        manager.reset()
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 24)
+            }
+        }
+    }
+
+    private var resultArea: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Latest transcript")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            ScrollView {
+                Text(manager.latestTranscript)
+                    .font(.body)
+            }
+            .frame(maxHeight: 100)
+            .padding(8)
+            .background(Color(nsColor: .textBackgroundColor))
+            .cornerRadius(6)
+
+            if let status = manager.formattedInsertionStatus {
+                let isSuccess = status == "Inserted into \(manager.insertionAppName ?? "app")"
+                HStack(spacing: 4) {
+                    Image(systemName: isSuccess ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                        .foregroundColor(isSuccess ? .green : .orange)
+                    Text(status)
+                        .font(.caption)
+                        .foregroundColor(isSuccess ? .green : .orange)
+                }
             }
 
-            if !manager.selectedFilePath.isEmpty {
-                Text(manager.selectedFilePath)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
+            HStack(spacing: 8) {
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(manager.latestTranscript, forType: .string)
+                } label: {
+                    Label("Copy", systemImage: "doc.on.doc")
+                }
+                .buttonStyle(.bordered)
+
+                if manager.canRetryInsert {
+                    Button("Retry Insert") {
+                        manager.retryInsert()
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                Spacer()
+
+                Button("Clear") {
+                    manager.reset()
+                }
+                .font(.caption)
+                .buttonStyle(.bordered)
+            }
+
+            if let timing = manager.latestTiming {
+                VStack(alignment: .leading, spacing: 2) {
+                    LabeledContent("Load", value: String(format: "%.2fs", timing.model_load_time_s))
+                    LabeledContent("Transcribe", value: String(format: "%.2fs", timing.transcribe_time_s))
+                    LabeledContent("Audio", value: String(format: "%.2fs", timing.audio_duration_s))
+                }
+                .font(.caption2)
+                .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private var footerRow: some View {
+        HStack(spacing: 8) {
+            Button("Select WAV File") {
+                manager.selectFile()
+            }
+            .buttonStyle(.bordered)
+            .disabled(manager.isRecording || manager.isTranscribing)
+
+            if case .idle = manager.state {
+                Button("Record") {
+                    manager.startRecording(source: .manual, targetApp: nil)
+                }
+                .buttonStyle(.bordered)
+            }
+
+            if manager.isRecording {
+                Button("Stop") {
+                    manager.stopAndTranscribe()
+                }
+                .buttonStyle(.bordered)
+                .disabled(manager.isStopping)
             }
 
             if manager.canTranscribe {
@@ -472,93 +613,26 @@ struct ContentView: View {
                 .buttonStyle(.borderedProminent)
             }
 
-            switch manager.state {
-            case .idle:
-                Text("Select a WAV file or tap Record to start")
-                    .foregroundColor(.secondary)
+            Spacer()
+        }
+    }
 
-            case .recording:
-                EmptyView()
+    var body: some View {
+        VStack(spacing: 12) {
+            headerRow
 
-            case .fileSelected:
-                Text("Ready to transcribe")
-                    .foregroundColor(.secondary)
+            primaryArea
 
-            case .transcribing:
-                HStack {
-                    ProgressView()
-                    Text("Transcribing...")
-                }
-
-            case .success(let result):
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Transcript")
-                        .font(.headline)
-                    ScrollView {
-                        Text(result.transcript)
-                            .font(.body)
-                    }
-                    .frame(minHeight: 80)
-                    .padding(8)
-                    .background(Color(nsColor: .textBackgroundColor))
-                    .cornerRadius(6)
-
-                    Text("Timing")
-                        .font(.headline)
-                    VStack(alignment: .leading, spacing: 4) {
-                        LabeledContent("Model load", value: String(format: "%.2fs", result.timing.model_load_time_s))
-                        LabeledContent("Transcribe", value: String(format: "%.2fs", result.timing.transcribe_time_s))
-                        LabeledContent("Audio", value: String(format: "%.2fs", result.timing.audio_duration_s))
-                        LabeledContent("RTF", value: String(format: "%.4f", result.timing.real_time_factor))
-                    }
-                    .font(.caption)
-
-                    if let status = manager.lastInsertionStatus {
-                        let isSuccess = status == "Inserted"
-                        HStack {
-                            Image(systemName: isSuccess ? "checkmark.circle" : "exclamationmark.triangle")
-                            Text(status)
-                                .font(.caption)
-                                .foregroundColor(isSuccess ? .green : .orange)
-                        }
-                        .padding(6)
-                        .background(isSuccess ? Color.green.opacity(0.1) : Color.orange.opacity(0.1))
-                        .cornerRadius(6)
-                    }
-
-                    HStack {
-                        Button("Copy Transcript") {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(result.transcript, forType: .string)
-                        }
-                        .buttonStyle(.bordered)
-
-                        if manager.canRetryInsert {
-                            Button("Retry Insert") {
-                                manager.retryInsert()
-                            }
-                            .buttonStyle(.bordered)
-                        }
-                    }
-
-                    Button("Transcribe Another") {
-                        manager.reset()
-                    }
-                }
-                .padding()
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            case .error(let message):
-                Text(message)
-                    .foregroundColor(.red)
-                    .padding()
-                Button("Try Again") {
-                    manager.reset()
-                }
+            if case .success = manager.state {
+                Divider()
+                resultArea
+                Divider()
             }
+
+            footerRow
         }
         .padding()
-        .frame(width: 600, height: 500)
+        .frame(width: 520, height: 480)
         .onAppear {
             hotkeyManager.startListening(transcriptionManager: manager)
         }
