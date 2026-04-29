@@ -62,10 +62,10 @@ class Server:
             try:
                 conn, _ = self._socket.accept()
                 self._handle_connection(conn)
-            except OSError:
-                break
             except socket.timeout:
                 continue  # check _running and loop
+            except OSError:
+                break
 
     def _handle_connection(self, conn: socket.socket):
         """Handle one persistent connection. Process requests until disconnect."""
