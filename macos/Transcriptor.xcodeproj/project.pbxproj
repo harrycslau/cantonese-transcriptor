@@ -10,6 +10,7 @@
 		10120CCAC3A53CA3B34B9FFD /* AudioRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF79FF5075BF549F0E03EB88 /* AudioRecorder.swift */; };
 		19F8B31A95EFBF87AA5E8143 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4074DEEA6A38C33CCB6EC82E /* ContentView.swift */; };
 		2ABC5DB9F6A24C155AAB0559 /* TranscriptorApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30B4E5E545733B1D5E0651E4 /* TranscriptorApp.swift */; };
+		454895F4BDFCCCB74ABC09B9 /* HotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9E8D144F3C1E81FEBF20D0B /* HotkeyManager.swift */; };
 		6FEA30C95A1D582132C2264A /* UnixSocketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60EA89544AC9CD8B8031298 /* UnixSocketClient.swift */; };
 		946D85E556AD55676C20254F /* TranscribeModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0768AA6B21B880AF48E8B1B /* TranscribeModels.swift */; };
 		9FB597EA3868F9FCCDC41F2D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BD1C92028EB68096F92C74C9 /* Assets.xcassets */; };
@@ -21,6 +22,7 @@
 		4074DEEA6A38C33CCB6EC82E /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		A60EA89544AC9CD8B8031298 /* UnixSocketClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnixSocketClient.swift; sourceTree = "<group>"; };
 		BD1C92028EB68096F92C74C9 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		C9E8D144F3C1E81FEBF20D0B /* HotkeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeyManager.swift; sourceTree = "<group>"; };
 		CF79FF5075BF549F0E03EB88 /* AudioRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRecorder.swift; sourceTree = "<group>"; };
 		F0768AA6B21B880AF48E8B1B /* TranscribeModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscribeModels.swift; sourceTree = "<group>"; };
 		F3F076203802E36EBD5837A6 /* Transcriptor.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Transcriptor.entitlements; sourceTree = "<group>"; };
@@ -63,6 +65,7 @@
 			isa = PBXGroup;
 			children = (
 				CF79FF5075BF549F0E03EB88 /* AudioRecorder.swift */,
+				C9E8D144F3C1E81FEBF20D0B /* HotkeyManager.swift */,
 				A60EA89544AC9CD8B8031298 /* UnixSocketClient.swift */,
 			);
 			path = Client;
@@ -161,6 +164,7 @@
 			files = (
 				10120CCAC3A53CA3B34B9FFD /* AudioRecorder.swift in Sources */,
 				19F8B31A95EFBF87AA5E8143 /* ContentView.swift in Sources */,
+				454895F4BDFCCCB74ABC09B9 /* HotkeyManager.swift in Sources */,
 				946D85E556AD55676C20254F /* TranscribeModels.swift in Sources */,
 				2ABC5DB9F6A24C155AAB0559 /* TranscriptorApp.swift in Sources */,
 				6FEA30C95A1D582132C2264A /* UnixSocketClient.swift in Sources */,

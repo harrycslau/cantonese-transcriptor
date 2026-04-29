@@ -46,6 +46,13 @@ class TranscriptionManager: ObservableObject {
         return false
     }
 
+    var isTranscribing: Bool {
+        if case .transcribing = state {
+            return true
+        }
+        return false
+    }
+
     func selectFile() {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = false
@@ -143,6 +150,7 @@ class TranscriptionManager: ObservableObject {
 
 struct ContentView: View {
     @StateObject private var manager = TranscriptionManager()
+    @StateObject private var hotkeyManager = HotkeyManager()
 
     private func formatDuration(_ duration: TimeInterval) -> String {
         let totalSeconds = Int(duration)
@@ -176,6 +184,38 @@ struct ContentView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
+            }
+
+            // Push-to-talk status row
+            HStack {
+                Image(systemName: "waveform")
+                Text("Push-to-talk: hold Left Control")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Spacer()
+                Toggle("Enable", isOn: Binding(
+                    get: { hotkeyManager.isListening },
+                    set: { enabled in
+                        if enabled {
+                            hotkeyManager.startListening(transcriptionManager: manager)
+                        } else {
+                            hotkeyManager.stopListening()
+                        }
+                    }
+                ))
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .scaleEffect(0.8)
+            }
+
+            // Permission warning
+            if let warning = hotkeyManager.permissionWarning {
+                Text(warning)
+                    .font(.caption)
+                    .foregroundColor(.orange)
+                    .padding(8)
+                    .background(Color.orange.opacity(0.1))
+                    .cornerRadius(6)
             }
 
             if !manager.selectedFilePath.isEmpty {
@@ -251,5 +291,8 @@ struct ContentView: View {
         }
         .padding()
         .frame(width: 600, height: 500)
+        .onAppear {
+            hotkeyManager.startListening(transcriptionManager: manager)
+        }
     }
 }
