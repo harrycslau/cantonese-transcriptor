@@ -24,10 +24,15 @@ enum SocketClientError: LocalizedError {
     }
 }
 
+enum TranscriptionTimeout {
+    case shortRecording  // ~120s — for PTT and manual recording
+    case file           // ~7200s (2 hours) — for file transcription
+}
+
 actor UnixSocketClient {
     private let socketPath = "/tmp/cantonese-transcriptor.sock"
 
-    func transcribe(audioPath: String) async throws -> TranscribeResult {
+    func transcribe(audioPath: String, timeout: TranscriptionTimeout = .shortRecording) async throws -> TranscribeResult {
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else {
             throw SocketClientError.couldNotConnect
@@ -72,8 +77,12 @@ actor UnixSocketClient {
             written += bytes
         }
 
-        // Set a 30-second receive timeout
-        var tv = timeval(tv_sec: 30, tv_usec: 0)
+        let seconds: Int
+        switch timeout {
+        case .shortRecording: seconds = 120
+        case .file: seconds = 7200
+        }
+        var tv = timeval(tv_sec: seconds, tv_usec: 0)
         setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
 
         // Read until newline
@@ -112,6 +121,102 @@ actor UnixSocketClient {
         }
 
         return result
+    }
+
+    func transcribeFileChunked(
+        audioPath: String,
+        onProgress: @escaping (ChunkProgress) -> Void
+    ) async throws -> TranscribeResult {
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else {
+            throw SocketClientError.couldNotConnect
+        }
+        defer { close(fd) }
+
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+
+        socketPath.withCString { ptr in
+            withUnsafeMutablePointer(to: &addr.sun_path) { pathPtr in
+                let pathBuf = UnsafeMutableRawPointer(pathPtr).assumingMemoryBound(to: CChar.self)
+                strncpy(pathBuf, ptr, 104)
+            }
+        }
+
+        let connectResult = withUnsafePointer(to: &addr) { sockaddrPtr -> Int32 in
+            sockaddrPtr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrTypedPtr in
+                connect(fd, sockaddrTypedPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+
+        guard connectResult == 0 else {
+            throw SocketClientError.couldNotConnect
+        }
+
+        let request = ChunkedTranscribeRequest(params: TranscribeParams(audio_path: audioPath))
+        let encoder = JSONEncoder()
+        var requestData = try encoder.encode(request)
+        requestData.append(contentsOf: "\n".utf8)
+
+        var written = 0
+        while written < requestData.count {
+            let bytes = requestData.withUnsafeBytes { ptr -> Int in
+                guard let baseAddr = ptr.baseAddress else { return -1 }
+                return write(fd, baseAddr.advanced(by: written), requestData.count - written)
+            }
+            guard bytes > 0 else {
+                throw SocketClientError.connectionClosed
+            }
+            written += bytes
+        }
+
+        // Use long timeout (2hr) for chunked file transcription
+        var tv = timeval(tv_sec: 7200, tv_usec: 0)
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+
+        var responseData = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while true {
+            let bytesRead = read(fd, &buffer, buffer.count)
+            if bytesRead < 0 {
+                if errno == EAGAIN || errno == EWOULDBLOCK {
+                    throw SocketClientError.connectionTimedOut
+                }
+                break
+            }
+            if bytesRead == 0 { break }
+            responseData.append(contentsOf: buffer[0..<bytesRead])
+
+            while let newlineIndex = responseData.firstIndex(of: 0x0A) {
+                let lineData = Data(responseData[..<newlineIndex])
+                responseData = Data(responseData[(newlineIndex+1)...])
+                guard !lineData.isEmpty else { continue }
+
+                // Check if this is a progress notification
+                if let progress = try? JSONDecoder().decode(TranscribeProgressEvent.self, from: lineData) {
+                    if progress.method == "transcribe_progress" {
+                        onProgress(ChunkProgress(
+                            current: progress.params.chunk,
+                            total: progress.params.total,
+                            stage: progress.params.stage
+                        ))
+                        continue
+                    }
+                }
+
+                // Otherwise decode as final response
+                if let finalResponse = try? JSONDecoder().decode(TranscribeResponse.self, from: lineData) {
+                    if let error = finalResponse.error {
+                        throw SocketClientError.helperError(error.message)
+                    }
+                    guard let result = finalResponse.result else {
+                        throw SocketClientError.invalidResponse
+                    }
+                    return result
+                }
+            }
+        }
+        throw SocketClientError.connectionClosed
     }
 
     func ping() async throws -> Bool {

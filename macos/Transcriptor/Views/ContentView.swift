@@ -19,6 +19,11 @@ enum RecordingSource {
     case pushToTalk
 }
 
+enum TranscribingSource {
+    case file
+    case recording
+}
+
 struct InsertionContext {
     let transcript: String
     let targetApp: NSRunningApplication
@@ -34,12 +39,16 @@ class TranscriptionManager: ObservableObject {
     @Published var targetAppBeforeRecording: NSRunningApplication?
     @Published var lastInsertionStatus: String?
     @Published var lastInsertionSucceeded: Bool?
+    @Published var transcribingSource: TranscribingSource = .recording
+    @Published var transcribingElapsed: TimeInterval = 0
+    @Published var chunkProgress: ChunkProgress?
 
     private var lastInsertionContext: InsertionContext?
 
     private let client = UnixSocketClient()
     private let audioRecorder = AudioRecorder()
     private var recordingTimer: Timer?
+    private var transcribingTimer: Timer?
     private var stopping = false
 
     var canSelectFile: Bool {
@@ -130,9 +139,12 @@ class TranscriptionManager: ObservableObject {
         }
     }
 
-    func transcribe() {
+    func transcribeChunked() {
         guard case .fileSelected(let url) = state else { return }
         clearInsertionState()
+        transcribingSource = .file
+        chunkProgress = nil
+        startTranscribingTimer()
         state = .transcribing
 
         Task {
@@ -140,9 +152,25 @@ class TranscriptionManager: ObservableObject {
             do {
                 let transcriptionPath = try prepareAudioForHelper(url)
                 tempPath = transcriptionPath
-                let result = try await client.transcribe(audioPath: transcriptionPath)
+                let result = try await client.transcribeFileChunked(audioPath: transcriptionPath) { progress in
+                    Task { @MainActor in
+                        self.chunkProgress = progress
+                    }
+                }
+                stopTranscribingTimer()
+                chunkProgress = nil
                 state = .success(result)
+            } catch let error as SocketClientError {
+                stopTranscribingTimer()
+                chunkProgress = nil
+                if case .connectionTimedOut = error {
+                    state = .error("Helper is still processing or did not respond. Large files can take several minutes.")
+                } else {
+                    state = .error(error.localizedDescription)
+                }
             } catch {
+                stopTranscribingTimer()
+                chunkProgress = nil
                 state = .error(error.localizedDescription)
             }
             if let tempPath {
@@ -199,15 +227,19 @@ class TranscriptionManager: ObservableObject {
             }
 
             state = .transcribing
+            transcribingSource = .recording
+            startTranscribingTimer()
 
             do {
-                let result = try await client.transcribe(audioPath: recordingPath)
+                let result = try await client.transcribe(audioPath: recordingPath, timeout: .shortRecording)
+                stopTranscribingTimer()
                 state = .success(result)
 
                 if recordingSource == .pushToTalk {
                     insertTranscript(result)
                 }
             } catch {
+                stopTranscribingTimer()
                 state = .error(error.localizedDescription)
             }
             try? FileManager.default.removeItem(atPath: recordingPath)
@@ -316,9 +348,13 @@ class TranscriptionManager: ObservableObject {
     }
 
     func reset() {
+        stopTranscribingTimer()
+        transcribingElapsed = 0
+        transcribingSource = .recording
         selectedFilePath = ""
         recordingDuration = 0
         stopping = false
+        chunkProgress = nil
         state = .idle
         clearInsertionState()
     }
@@ -329,6 +365,20 @@ class TranscriptionManager: ObservableObject {
                 self?.recordingDuration += 0.1
             }
         }
+    }
+
+    private func startTranscribingTimer() {
+        transcribingElapsed = 0
+        transcribingTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.transcribingElapsed += 1.0
+            }
+        }
+    }
+
+    private func stopTranscribingTimer() {
+        transcribingTimer?.invalidate()
+        transcribingTimer = nil
     }
 
     private func clearInsertionState() {
@@ -494,18 +544,35 @@ struct ContentView: View {
                 .padding(.vertical, 24)
 
             case .transcribing:
-                HStack(spacing: 8) {
+                VStack(spacing: 6) {
                     ProgressView()
-                    Text("Transcribing...")
+                    if manager.transcribingSource == .file {
+                        if let progress = manager.chunkProgress {
+                            Text("Transcribing chunk \(progress.current) of \(progress.total) (\(progress.stage))... \(formatDuration(manager.transcribingElapsed))")
+                        } else {
+                            Text("Transcribing file... \(formatDuration(manager.transcribingElapsed)) elapsed")
+                        }
+                        Text("Large files may take several minutes")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    } else {
+                        Text("Transcribing...")
+                    }
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 24)
 
             case .fileSelected:
-                Text("Ready to transcribe")
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 24)
+                VStack(spacing: 4) {
+                    Text("Ready to transcribe")
+                        .foregroundColor(.secondary)
+                    Text(manager.selectedFilePath)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 24)
 
             case .success:
                 EmptyView()
@@ -614,7 +681,7 @@ struct ContentView: View {
 
             if manager.canTranscribe {
                 Button("Transcribe") {
-                    manager.transcribe()
+                    manager.transcribeChunked()
                 }
                 .buttonStyle(.borderedProminent)
             }

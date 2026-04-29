@@ -7,6 +7,7 @@ import os
 import signal
 import socket
 import sys
+import uuid
 from pathlib import Path
 
 # Ensure helper dir is on path for imports
@@ -110,39 +111,58 @@ class Server:
             conn.sendall((json.dumps(resp) + "\n").encode("utf-8"))
             return
 
-        if method != "transcribe":
-            resp = protocol.build_error_response(-32601, f"Unknown method: {method}", None, data.get("id"))
-            conn.sendall((json.dumps(resp) + "\n").encode("utf-8"))
+        if method == "transcribe":
+            self._handle_transcribe(conn, data)
             return
 
+        if method == "transcribe_file_chunked":
+            self._handle_transcribe_file_chunked(conn, data)
+            return
+
+        resp = protocol.build_error_response(-32601, f"Unknown method: {method}", None, data.get("id"))
+        conn.sendall((json.dumps(resp) + "\n").encode("utf-8"))
+
+    def _validate_audio_request(self, data: dict) -> tuple[bool, dict | None, dict | None]:
+        """Returns (ok, validated_params, error_response). On ok, error_response is None."""
         params = data.get("params")
+        rid = data.get("id")
         if not isinstance(params, dict):
-            resp = protocol.build_error_response(-32602, "params must be a JSON object", None, data.get("id"))
-            conn.sendall((json.dumps(resp) + "\n").encode("utf-8"))
-            return
-
+            return False, None, protocol.build_error_response(-32602, "params must be a JSON object", None, rid)
         audio_path = params.get("audio_path")
-        job_id = params.get("job_id")
-
+        job_id = params.get("job_id") or str(uuid.uuid4())
         if not isinstance(audio_path, str) or not audio_path:
-            resp = protocol.build_error_response(-32602, "params.audio_path must be a non-empty string", job_id, data.get("id"))
-            conn.sendall((json.dumps(resp) + "\n").encode("utf-8"))
-            return
-
+            return False, None, protocol.build_error_response(-32602, "params.audio_path must be a non-empty string", job_id, rid)
         if not os.path.isabs(audio_path):
-            resp = protocol.build_error_response(-32602, "params.audio_path must be an absolute path", job_id, data.get("id"))
-            conn.sendall((json.dumps(resp) + "\n").encode("utf-8"))
-            return
-
+            return False, None, protocol.build_error_response(-32602, "params.audio_path must be an absolute path", job_id, rid)
         ok, path_err = protocol.validate_audio_path(audio_path)
         if not ok:
-            resp = protocol.build_error_response(-32602, path_err, job_id, data.get("id"))
-            conn.sendall((json.dumps(resp) + "\n").encode("utf-8"))
+            return False, None, protocol.build_error_response(-32602, path_err, job_id, rid)
+        return True, {"audio_path": audio_path, "job_id": job_id}, None
+
+    def _handle_transcribe(self, conn: socket.socket, data: dict):
+        ok, params, err_resp = self._validate_audio_request(data)
+        if not ok:
+            conn.sendall((json.dumps(err_resp) + "\n").encode("utf-8"))
             return
+
+        audio_path = params["audio_path"]
+        job_id = params["job_id"]
 
         try:
             self._in_progress = True
+            logger.info(
+                "Transcription started job_id=%s audio_path=%s size=%s",
+                job_id,
+                audio_path,
+                os.path.getsize(audio_path) if os.path.exists(audio_path) else None,
+            )
             transcript, transcribe_time, audio_duration = self._model.transcribe(audio_path)
+            logger.info(
+                "Transcription finished job_id=%s transcribe_time=%.2f audio_duration=%.2f",
+                job_id,
+                transcribe_time,
+                audio_duration,
+            )
             rtf = transcribe_time / audio_duration if audio_duration > 0 else 0.0
             timing = {
                 "model_load_time_s": self._model.load_time_s or 0.0,
@@ -160,6 +180,42 @@ class Server:
                 os.path.exists(audio_path),
                 os.path.getsize(audio_path) if os.path.exists(audio_path) else None,
             )
+            resp = protocol.build_error_response(-32603, str(e), job_id, data.get("id"))
+            conn.sendall((json.dumps(resp) + "\n").encode("utf-8"))
+        finally:
+            self._in_progress = False
+
+    def _handle_transcribe_file_chunked(self, conn: socket.socket, data: dict):
+        ok, params, err_resp = self._validate_audio_request(data)
+        if not ok:
+            conn.sendall((json.dumps(err_resp) + "\n").encode("utf-8"))
+            return
+
+        audio_path = params["audio_path"]
+        job_id = params["job_id"]
+
+        try:
+            self._in_progress = True
+            duration = self._model._get_audio_duration(audio_path)
+            if duration > 0 and duration <= 90:
+                transcript, transcribe_time, audio_duration = self._model.transcribe(audio_path)
+            else:
+                def progress_callback(jid, chunk, total, stage):
+                    notify = protocol.build_progress_notification(jid, chunk, total, stage)
+                    conn.sendall((json.dumps(notify) + "\n").encode("utf-8"))
+                transcript, transcribe_time, audio_duration = self._model.transcribe_chunked(
+                    audio_path, job_id=job_id, progress_callback=progress_callback
+                )
+            rtf = transcribe_time / audio_duration if audio_duration > 0 else 0.0
+            timing = {
+                "model_load_time_s": self._model.load_time_s or 0.0,
+                "transcribe_time_s": transcribe_time,
+                "audio_duration_s": audio_duration,
+                "real_time_factor": rtf,
+            }
+            resp = protocol.build_success_response(job_id, transcript, timing, data.get("id"))
+            conn.sendall((json.dumps(resp) + "\n").encode("utf-8"))
+        except Exception as e:
             resp = protocol.build_error_response(-32603, str(e), job_id, data.get("id"))
             conn.sendall((json.dumps(resp) + "\n").encode("utf-8"))
         finally:

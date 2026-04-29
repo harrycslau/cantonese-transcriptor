@@ -112,4 +112,5 @@ HF_HUB_OFFLINE=1 python server.py &
 - Logs: `/tmp/cantonese-transcriptor.log`
 - Stdout is unused — all protocol traffic goes over the socket.
 - `model_load_time_s` is returned in every response; it is the startup load time, not per-job.
-- Audio input must be WAV for duration timing; transcription itself supports broader formats via `mlx-audio`.
+- The macOS app accepts WAV, MP3, and M4A. Decoding depends on the helper/MLX audio stack.
+- Duration timing is accurate for WAV; MP3 and M4A may return 0.0 if duration cannot be determined.

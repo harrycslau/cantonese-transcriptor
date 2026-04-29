@@ -74,3 +74,35 @@ struct PingResponse: Codable {
     let result: PingResult?
     struct PingResult: Codable { let status: String }
 }
+
+struct ChunkProgress: Equatable {
+    let current: Int
+    let total: Int
+    let stage: String
+}
+
+struct TranscribeProgressEvent: Decodable {
+    let jsonrpc: String
+    let method: String
+    let params: ProgressParams
+    struct ProgressParams: Decodable {
+        let job_id: String
+        let chunk: Int
+        let total: Int
+        let stage: String
+    }
+}
+
+struct ChunkedTranscribeRequest: Codable {
+    let jsonrpc: String
+    let method: String
+    let params: TranscribeParams
+    let id: Int
+
+    init(params: TranscribeParams) {
+        self.jsonrpc = "2.0"
+        self.method = "transcribe_file_chunked"
+        self.params = params
+        self.id = 1
+    }
+}

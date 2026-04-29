@@ -50,3 +50,12 @@ def build_ping_response(request_id: int | str) -> dict[str, Any]:
         "result": {"status": "ok"},
         "id": request_id
     }
+
+
+def build_progress_notification(job_id: str, chunk: int, total: int, stage: str) -> dict[str, Any]:
+    """Build a JSON-RPC notification for transcription progress (no id)."""
+    return {
+        "jsonrpc": "2.0",
+        "method": "transcribe_progress",
+        "params": {"job_id": job_id, "chunk": chunk, "total": total, "stage": stage},
+    }
