@@ -113,7 +113,16 @@ class TranscriptionManager: ObservableObject {
     }
 
     func startRecording(source: RecordingSource, targetApp: NSRunningApplication?) {
-        guard case .idle = state else { return }
+        switch state {
+        case .idle, .success:
+            break
+        default:
+            return
+        }
+        selectedFilePath = ""
+        recordingDuration = 0
+        stopping = false
+        clearInsertionState()
         recordingSource = source
         targetAppBeforeRecording = targetApp
 
