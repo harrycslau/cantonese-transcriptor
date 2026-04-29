@@ -41,3 +41,14 @@ targets:
       path: Transcriptor/Transcriptor.entitlements
       properties:
         com.apple.security.app-sandbox: false
+
+schemes:
+  Transcriptor:
+    build:
+      targets:
+        Transcriptor: all
+    run:
+      config: Debug
+      environmentVariables:
+        TRANSCRIPTOR_HELPER_PATH: /Users/harrycslau/Documents/GitRepositories/cantonese-transcriptor/helper/server.py
+        TRANSCRIPTOR_PYTHON: /Users/harrycslau/miniconda3/bin/python3

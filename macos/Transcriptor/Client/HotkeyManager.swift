@@ -35,7 +35,7 @@ class HotkeyManager: ObservableObject {
             }
         }
 
-        checkPermission()
+        refreshPermissionStatus()
     }
 
     func stopListening() {
@@ -72,12 +72,20 @@ class HotkeyManager: ObservableObject {
         }
     }
 
-    private func checkPermission() {
-        let options = [
-            kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true
-        ] as CFDictionary
-        let trusted = AXIsProcessTrustedWithOptions(options)
-        if !trusted {
+    func refreshPermissionStatus(prompt: Bool = false) {
+        let trusted: Bool
+        if prompt {
+            let options = [
+                kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true
+            ] as CFDictionary
+            trusted = AXIsProcessTrustedWithOptions(options)
+        } else {
+            trusted = AXIsProcessTrusted()
+        }
+
+        if trusted {
+            permissionWarning = nil
+        } else {
             permissionWarning = "Push-to-talk may not work while other apps are focused. Enable Accessibility for Transcriptor in System Settings → Privacy & Security → Accessibility."
         }
     }

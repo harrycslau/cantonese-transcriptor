@@ -52,3 +52,25 @@ struct JSONRPCError: Codable {
     let code: Int
     let message: String
 }
+
+struct PingRequest: Codable {
+    let jsonrpc: String
+    let method: String
+    let id: Int
+
+    init() {
+        self.jsonrpc = "2.0"
+        self.method = "ping"
+        self.id = 0
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case jsonrpc, method, id
+    }
+}
+
+struct PingResponse: Codable {
+    let jsonrpc: String
+    let result: PingResult?
+    struct PingResult: Codable { let status: String }
+}

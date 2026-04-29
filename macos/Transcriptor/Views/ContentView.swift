@@ -97,11 +97,17 @@ class TranscriptionManager: ObservableObject {
         state = .transcribing
 
         Task {
+            var tempPath: String?
             do {
-                let result = try await client.transcribe(audioPath: url.path)
+                let transcriptionPath = try prepareAudioForHelper(url)
+                tempPath = transcriptionPath
+                let result = try await client.transcribe(audioPath: transcriptionPath)
                 state = .success(result)
             } catch {
                 state = .error(error.localizedDescription)
+            }
+            if let tempPath {
+                try? FileManager.default.removeItem(atPath: tempPath)
             }
         }
     }
@@ -130,24 +136,22 @@ class TranscriptionManager: ObservableObject {
         recordingTimer?.invalidate()
         recordingTimer = nil
 
-        let path = audioRecorder.stopRecording()
-
-        guard let recordingPath = path else {
-            state = .error("Recording failed")
-            stopping = false
-            return
-        }
-
-        if recordingDuration < 1.0 {
-            try? FileManager.default.removeItem(atPath: recordingPath)
-            state = .error("Recording too short. Please record at least 1 second.")
-            stopping = false
-            return
-        }
-
-        state = .transcribing
-
         Task {
+            guard let recordingPath = await audioRecorder.stopRecording() else {
+                state = .error("Recording failed")
+                stopping = false
+                return
+            }
+
+            if recordingDuration < 1.0 {
+                try? FileManager.default.removeItem(atPath: recordingPath)
+                state = .error("Recording too short. Please record at least 1 second.")
+                stopping = false
+                return
+            }
+
+            state = .transcribing
+
             do {
                 let result = try await client.transcribe(audioPath: recordingPath)
                 state = .success(result)
@@ -188,8 +192,10 @@ class TranscriptionManager: ObservableObject {
             return
         }
 
-        guard AXIsProcessTrusted() else {
-            lastInsertionStatus = "Accessibility permission needed"
+        lastInsertionContext = InsertionContext(transcript: trimmed, targetApp: targetApp)
+
+        guard requestAccessibilityPermissionIfNeeded() else {
+            lastInsertionStatus = "Accessibility permission needed. Enable it, then quit and reopen Transcriptor."
             lastInsertionSucceeded = false
             return
         }
@@ -198,7 +204,6 @@ class TranscriptionManager: ObservableObject {
         ClipboardManager.setText(trimmed)
         let transcriptChangeCount = NSPasteboard.general.changeCount
 
-        lastInsertionContext = InsertionContext(transcript: trimmed, targetApp: targetApp)
         lastInsertionStatus = "Inserting..."
         lastInsertionSucceeded = nil
 
@@ -230,8 +235,8 @@ class TranscriptionManager: ObservableObject {
             return
         }
 
-        guard AXIsProcessTrusted() else {
-            lastInsertionStatus = "Accessibility permission needed"
+        guard requestAccessibilityPermissionIfNeeded() else {
+            lastInsertionStatus = "Accessibility permission needed. Enable it, then quit and reopen Transcriptor."
             lastInsertionSucceeded = false
             return
         }
@@ -285,9 +290,31 @@ class TranscriptionManager: ObservableObject {
         recordingSource = .none
         targetAppBeforeRecording = nil
     }
+
+    private func prepareAudioForHelper(_ url: URL) throws -> String {
+        let didStartAccessing = url.startAccessingSecurityScopedResource()
+        defer {
+            if didStartAccessing {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        let tempURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("selected_\(UUID().uuidString).wav")
+        try FileManager.default.copyItem(at: url, to: tempURL)
+        return tempURL.path
+    }
+
+    private func requestAccessibilityPermissionIfNeeded() -> Bool {
+        if AXIsProcessTrusted() {
+            return true
+        }
+        return AXIsProcessTrusted()
+    }
 }
 
 struct ContentView: View {
+    @EnvironmentObject var helperManager: HelperManager
     @StateObject private var manager = TranscriptionManager()
     @StateObject private var hotkeyManager = HotkeyManager()
 
@@ -297,6 +324,57 @@ struct ContentView: View {
         let seconds = totalSeconds % 60
         let tenths = Int((duration - Double(totalSeconds)) * 10)
         return String(format: "%02d:%02d.%d", minutes, seconds, tenths)
+    }
+
+    private var helperStateColor: Color {
+        switch helperManager.state {
+        case .ready: return .green
+        case .starting: return .blue
+        case .failed: return .orange
+        case .notRunning: return .gray
+        }
+    }
+
+    private var helperStateLabel: String {
+        switch helperManager.state {
+        case .ready: return "Helper ready"
+        case .starting: return "Starting helper..."
+        case .failed: return "Helper failed"
+        case .notRunning: return "Helper not running"
+        }
+    }
+
+    private var helperStatusRow: some View {
+        HStack {
+            Circle()
+                .fill(helperStateColor)
+                .frame(width: 8, height: 8)
+            Text(helperStateLabel)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            Spacer()
+            if case .failed(let msg) = helperManager.state {
+                Button("Retry") {
+                    helperManager.startHelper()
+                }
+                .font(.caption)
+                .buttonStyle(.bordered)
+                Text(msg)
+                    .font(.caption2)
+                    .foregroundColor(.orange)
+            }
+            if case .notRunning = helperManager.state {
+                Button("Start Helper") {
+                    helperManager.startHelper()
+                }
+                .font(.caption)
+                .buttonStyle(.bordered)
+            }
+            if case .starting = helperManager.state {
+                ProgressView()
+                    .scaleEffect(0.5)
+            }
+        }
     }
 
     var body: some View {
@@ -346,13 +424,29 @@ struct ContentView: View {
                 .scaleEffect(0.8)
             }
 
+            helperStatusRow
+
             if let warning = hotkeyManager.permissionWarning {
-                Text(warning)
-                    .font(.caption)
-                    .foregroundColor(.orange)
-                    .padding(8)
-                    .background(Color.orange.opacity(0.1))
-                    .cornerRadius(6)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(warning)
+                        .font(.caption)
+                        .foregroundColor(.orange)
+
+                    HStack {
+                        Button("Refresh Permission") {
+                            hotkeyManager.refreshPermissionStatus()
+                        }
+                        .font(.caption)
+
+                        Button("Open Settings") {
+                            openAccessibilitySettings()
+                        }
+                        .font(.caption)
+                    }
+                }
+                .padding(8)
+                .background(Color.orange.opacity(0.1))
+                .cornerRadius(6)
             }
 
             if !manager.selectedFilePath.isEmpty {
@@ -459,5 +553,15 @@ struct ContentView: View {
         .onAppear {
             hotkeyManager.startListening(transcriptionManager: manager)
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            hotkeyManager.refreshPermissionStatus()
+        }
+    }
+
+    private func openAccessibilitySettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else {
+            return
+        }
+        NSWorkspace.shared.open(url)
     }
 }

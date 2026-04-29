@@ -53,9 +53,11 @@ class AudioRecorder {
         currentFilePath = url.path
     }
 
-    func stopRecording() -> String? {
+    func stopRecording() async -> String? {
+        let path = currentFilePath
         audioRecorder?.stop()
         audioRecorder = nil
-        return currentFilePath
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        return path
     }
 }

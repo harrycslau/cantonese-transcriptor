@@ -41,3 +41,12 @@ def validate_audio_path(audio_path: str) -> tuple[bool, str]:
     if not os.access(audio_path, os.R_OK):
         return False, f"File not readable: {audio_path}"
     return True, ""
+
+
+def build_ping_response(request_id: int | str) -> dict[str, Any]:
+    """Build a JSON-RPC success response for ping."""
+    return {
+        "jsonrpc": "2.0",
+        "result": {"status": "ok"},
+        "id": request_id
+    }

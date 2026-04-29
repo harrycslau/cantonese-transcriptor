@@ -105,7 +105,12 @@ class Server:
             return
 
         method = data.get("method")
-        if method is None or method != "transcribe":
+        if method == "ping":
+            resp = protocol.build_ping_response(data.get("id"))
+            conn.sendall((json.dumps(resp) + "\n").encode("utf-8"))
+            return
+
+        if method != "transcribe":
             resp = protocol.build_error_response(-32601, f"Unknown method: {method}", None, data.get("id"))
             conn.sendall((json.dumps(resp) + "\n").encode("utf-8"))
             return
@@ -148,7 +153,7 @@ class Server:
             resp = protocol.build_success_response(job_id, transcript, timing, data.get("id"))
             conn.sendall((json.dumps(resp) + "\n").encode("utf-8"))
         except Exception as e:
-            logger.error("Transcription failed: %s", e)
+            logger.exception("Transcription failed")
             resp = protocol.build_error_response(-32603, str(e), job_id, data.get("id"))
             conn.sendall((json.dumps(resp) + "\n").encode("utf-8"))
         finally:

@@ -1,8 +1,11 @@
 """Model loading and transcription helpers for the ASR helper server."""
 
 import logging
+import os
+import tempfile
 import time
 import wave
+from pathlib import Path
 
 from mlx_audio.stt.utils import load_model
 from mlx_audio.stt.generate import generate_transcription
@@ -39,8 +42,12 @@ class TranscriptionModel:
         if self._model is None:
             raise RuntimeError("Model not loaded. Call load() first.")
 
+        output_base = self._make_output_base(audio_path)
         t0 = time.perf_counter()
-        result = generate_transcription(self._model, audio_path)
+        try:
+            result = generate_transcription(self._model, audio_path, output_path=output_base, verbose=False)
+        finally:
+            self._cleanup_output_files(output_base)
         transcribe_time = time.perf_counter() - t0
 
         audio_duration = self._get_wav_duration(audio_path)
@@ -55,3 +62,18 @@ class TranscriptionModel:
                 return wf.getnframes() / wf.getframerate()
         except Exception:
             return 0.0
+
+    def _make_output_base(self, audio_path: str) -> str:
+        """Return a writable base path for mlx-audio sidecar output files."""
+        stem = Path(audio_path).stem or "audio"
+        fd, path = tempfile.mkstemp(prefix=f"transcriptor_{stem}_", dir=tempfile.gettempdir())
+        os.close(fd)
+        os.unlink(path)
+        return path
+
+    def _cleanup_output_files(self, output_base: str) -> None:
+        for suffix in (".txt", ".srt", ".vtt", ".json"):
+            try:
+                os.unlink(f"{output_base}{suffix}")
+            except FileNotFoundError:
+                pass
