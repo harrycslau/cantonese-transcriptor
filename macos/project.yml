@@ -29,6 +29,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.cantonese.Transcriptor
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "Transcriptor needs microphone access to record audio for transcription."
         INFOPLIST_GENERATION_MODE: GeneratedFile
         INFOPLIST_KEY_CFBundleDisplayName: Transcriptor
         INFOPLIST_KEY_NSPrincipalClass: NSApplication

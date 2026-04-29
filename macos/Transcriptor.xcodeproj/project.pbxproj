@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		10120CCAC3A53CA3B34B9FFD /* AudioRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF79FF5075BF549F0E03EB88 /* AudioRecorder.swift */; };
 		19F8B31A95EFBF87AA5E8143 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4074DEEA6A38C33CCB6EC82E /* ContentView.swift */; };
 		2ABC5DB9F6A24C155AAB0559 /* TranscriptorApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30B4E5E545733B1D5E0651E4 /* TranscriptorApp.swift */; };
 		6FEA30C95A1D582132C2264A /* UnixSocketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60EA89544AC9CD8B8031298 /* UnixSocketClient.swift */; };
@@ -20,6 +21,7 @@
 		4074DEEA6A38C33CCB6EC82E /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		A60EA89544AC9CD8B8031298 /* UnixSocketClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnixSocketClient.swift; sourceTree = "<group>"; };
 		BD1C92028EB68096F92C74C9 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		CF79FF5075BF549F0E03EB88 /* AudioRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRecorder.swift; sourceTree = "<group>"; };
 		F0768AA6B21B880AF48E8B1B /* TranscribeModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscribeModels.swift; sourceTree = "<group>"; };
 		F3F076203802E36EBD5837A6 /* Transcriptor.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Transcriptor.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -60,6 +62,7 @@
 		76C27182104A60F73E9715C4 /* Client */ = {
 			isa = PBXGroup;
 			children = (
+				CF79FF5075BF549F0E03EB88 /* AudioRecorder.swift */,
 				A60EA89544AC9CD8B8031298 /* UnixSocketClient.swift */,
 			);
 			path = Client;
@@ -156,6 +159,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				10120CCAC3A53CA3B34B9FFD /* AudioRecorder.swift in Sources */,
 				19F8B31A95EFBF87AA5E8143 /* ContentView.swift in Sources */,
 				946D85E556AD55676C20254F /* TranscribeModels.swift in Sources */,
 				2ABC5DB9F6A24C155AAB0559 /* TranscriptorApp.swift in Sources */,
@@ -237,6 +241,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_GENERATION_MODE = GeneratedFile;
 				INFOPLIST_KEY_CFBundleDisplayName = Transcriptor;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Transcriptor needs microphone access to record audio for transcription.";
 				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = com.cantonese.Transcriptor;
@@ -253,6 +258,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_GENERATION_MODE = GeneratedFile;
 				INFOPLIST_KEY_CFBundleDisplayName = Transcriptor;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Transcriptor needs microphone access to record audio for transcription.";
 				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = com.cantonese.Transcriptor;
