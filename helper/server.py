@@ -22,6 +22,7 @@ _MLX_MODEL_ID = os.environ.get("TRANSCRIPTOR_MLX_MODEL_ID", "mlx-community/GLM-A
 _SENSEVOICE_MODEL = os.environ.get("TRANSCRIPTOR_SENSEVOICE_MODEL", "FunAudioLLM/SenseVoiceSmall")
 _SENSEVOICE_LANGUAGE = os.environ.get("TRANSCRIPTOR_SENSEVOICE_LANGUAGE", "yue")
 _SENSEVOICE_DEVICE = os.environ.get("TRANSCRIPTOR_SENSEVOICE_DEVICE", "cpu")
+_SENSEVOICE_OUTPUT_SCRIPT = os.environ.get("TRANSCRIPTOR_OUTPUT_SCRIPT", "traditional_hk")
 
 
 SOCKET_PATH = "/tmp/cantonese-transcriptor.sock"
@@ -42,6 +43,7 @@ class Server:
                 model_id=_SENSEVOICE_MODEL,
                 language=_SENSEVOICE_LANGUAGE,
                 device=_SENSEVOICE_DEVICE,
+                output_script=_SENSEVOICE_OUTPUT_SCRIPT,
             )
             self._backend_name = "SenseVoice"
         elif _ASR_BACKEND == "mlx":
@@ -256,8 +258,9 @@ if __name__ == "__main__":
     load_time = server.load_model()
     server.start()  # bind socket before emitting ready
     if _ASR_BACKEND == "sensevoice":
-        logger.info("Backend: %s model=%s device=%s language=%s",
-            server._backend_name, _SENSEVOICE_MODEL, _SENSEVOICE_DEVICE, _SENSEVOICE_LANGUAGE)
+        logger.info("Backend: %s model=%s device=%s language=%s output_script=%s",
+            server._backend_name, _SENSEVOICE_MODEL, _SENSEVOICE_DEVICE,
+            _SENSEVOICE_LANGUAGE, _SENSEVOICE_OUTPUT_SCRIPT)
     elif _ASR_BACKEND == "mlx":
         logger.info("Backend: %s model=%s", server._backend_name, _MLX_MODEL_ID)
     logger.info("Model ready (load time %.2fs), socket listening", load_time)

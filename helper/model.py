@@ -63,16 +63,46 @@ class SenseVoiceBackend:
         model_id: str = "FunAudioLLM/SenseVoiceSmall",
         language: str = "yue",
         device: str = "cpu",
+        output_script: str = "traditional_hk",
     ):
         self._model = None
         self._model_id = model_id
         self._language = language
         self._device = device
+        self._output_script = output_script
         self._load_time_s: float | None = None
+        self._converter = self._build_converter(output_script)
 
     @property
     def load_time_s(self) -> float | None:
         return self._load_time_s
+
+    def _build_converter(self, output_script: str):
+        mapping = {
+            "traditional_hk": "s2hk",
+            "traditional_tw": "s2tw",
+            "traditional": "s2t",
+            "simplified": "t2s",
+            "none": None,
+        }
+        if output_script not in mapping:
+            raise RuntimeError(f"Unknown TRANSCRIPTOR_OUTPUT_SCRIPT: {output_script}")
+        config = mapping[output_script]
+        if config is None:
+            return None
+        try:
+            from opencc import OpenCC
+            return OpenCC(config)
+        except ImportError:
+            raise RuntimeError(
+                f"OpenCC is required for TRANSCRIPTOR_OUTPUT_SCRIPT={output_script}. "
+                "Install helper requirements: pip install -r requirements.txt"
+            )
+
+    def _convert_text(self, text: str) -> str:
+        if not text or self._converter is None:
+            return text
+        return self._converter.convert(text)
 
     def load(self) -> None:
         from funasr import AutoModel
@@ -99,10 +129,12 @@ class SenseVoiceBackend:
             for item in res:
                 txt = item.get("text", "") if isinstance(item, dict) else str(item)
                 parts.append(txt)
-            return rich_transcription_postprocess("".join(parts))
+            processed = rich_transcription_postprocess("".join(parts))
         elif isinstance(res, dict):
-            return rich_transcription_postprocess(res.get("text", ""))
-        return rich_transcription_postprocess(str(res)) if res else ""
+            processed = rich_transcription_postprocess(res.get("text", ""))
+        else:
+            processed = rich_transcription_postprocess(str(res)) if res else ""
+        return self._convert_text(processed)
 
     def transcribe(self, audio_path: str) -> tuple[str, float, float]:
         """Transcribe short audio (PTT/manual recording)."""

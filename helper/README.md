@@ -115,7 +115,17 @@ TRANSCRIPTOR_SENSEVOICE_LANGUAGE=yue
 TRANSCRIPTOR_SENSEVOICE_DEVICE=cpu
 TRANSCRIPTOR_MLX_MODEL_ID=mlx-community/GLM-ASR-Nano-2512-4bit
 TRANSCRIPTOR_FFMPEG_PATH=/opt/homebrew/bin/ffmpeg  # optional, not used by SenseVoice primary path
+TRANSCRIPTOR_OUTPUT_SCRIPT=traditional_hk  # default: traditional_hk; alternatives: traditional_tw, traditional, simplified, none
 ```
+
+Supported `TRANSCRIPTOR_OUTPUT_SCRIPT` values:
+- `traditional_hk` — convert to Traditional Hong Kong Chinese (s2hk)
+- `traditional_tw` — convert to Traditional Taiwan Chinese (s2tw)
+- `traditional` — convert to Traditional Chinese (s2t)
+- `simplified` — convert to Simplified Chinese (t2s)
+- `none` — no conversion
+
+Note: `TRANSCRIPTOR_SENSEVOICE_LANGUAGE=yue` is still passed to SenseVoice; script conversion is a post-processing step applied after transcription.
 
 ### Notes
 
