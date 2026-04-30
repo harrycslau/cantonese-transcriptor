@@ -15,6 +15,8 @@ from mlx_audio.stt.generate import generate_transcription
 
 logger = logging.getLogger("asr-helper")
 
+FILE_CHUNK_DURATION_S = 15
+
 # Ordered by priority: env var → common homebrew paths → shutil.which
 _FFMPEG_PATH: str | None = None
 
@@ -40,6 +42,16 @@ def _get_ffmpeg_path() -> str | None:
     # 3. Fall back to PATH lookup
     _FFMPEG_PATH = shutil.which("ffmpeg")
     return _FFMPEG_PATH
+
+
+def _rss_mb() -> float:
+    """Return current process RSS in MB via ps, not peak RSS."""
+    try:
+        import subprocess
+        out = subprocess.check_output(["ps", "-o", "rss=", "-p", str(os.getpid())], text=True)
+        return int(out.strip()) / 1024
+    except Exception:
+        return 0.0
 
 
 class TranscriptionModel:
@@ -73,7 +85,7 @@ class TranscriptionModel:
         output_base = self._make_output_base(audio_path)
         t0 = time.perf_counter()
         try:
-            result = generate_transcription(self._model, audio_path, output_path=output_base, verbose=False)
+            result = generate_transcription(self._model, audio_path, output_path=output_base, max_tokens=48, verbose=False)
         finally:
             self._cleanup_output_files(output_base)
         transcribe_time = time.perf_counter() - t0
@@ -83,8 +95,8 @@ class TranscriptionModel:
 
         return transcript, transcribe_time, audio_duration
 
-    def transcribe_chunked(self, audio_path: str, chunk_duration_s: int = 60,
-                           job_id: str = None, progress_callback=None) -> tuple[str, float, float]:
+    def transcribe_chunked(self, audio_path: str, job_id: str = None,
+                           progress_callback=None) -> tuple[str, float, float]:
         """
         Transcribe an audio file in chunks.
 
@@ -100,37 +112,58 @@ class TranscriptionModel:
 
         temp_dir = tempfile.mkdtemp(prefix="transcriptor_chunks_")
         try:
-            chunks = self._split_audio_chunks(audio_path, temp_dir, chunk_duration_s)
+            chunks = self._split_audio_chunks(audio_path, temp_dir, FILE_CHUNK_DURATION_S, job_id)
             if not chunks:
                 raise RuntimeError(f"ffmpeg produced no chunks for {audio_path}")
             total = len(chunks)
             transcripts = []
             total_transcribe_time = 0.0
             for i, chunk_path in enumerate(chunks, start=1):
+                chunk_dur = self._get_audio_duration(chunk_path)
+                chunk_size = os.path.getsize(chunk_path)
                 logger.info(
-                    "chunk_start job_id=%s chunk=%d/%d path=%s",
-                    job_id, i, total, chunk_path,
+                    "chunk_transcribe_start job_id=%s chunk=%d/%d path=%s duration=%.2fs size=%d rss_mb=%.1f",
+                    job_id, i, total, chunk_path, chunk_dur, chunk_size, _rss_mb(),
                 )
                 if progress_callback:
+                    logger.info("progress_callback job_id=%s chunk=%d/%d stage=processing", job_id, i, total)
                     progress_callback(job_id, i, total, "processing")
                 t0 = time.perf_counter()
                 output_base = self._make_output_base(chunk_path)
                 try:
                     result = generate_transcription(self._model, chunk_path,
-                                                  output_path=output_base, verbose=False)
+                                                  output_path=output_base, max_tokens=48, verbose=False)
                 except Exception as e:
                     raise RuntimeError(f"Chunk {i}/{total} failed: {e}") from e
                 finally:
                     self._cleanup_output_files(output_base)
                 chunk_time = time.perf_counter() - t0
                 total_transcribe_time += chunk_time
+                logger.info(
+                    "chunk_transcribe_done job_id=%s chunk=%d/%d elapsed=%.2fs rss_mb=%.1f",
+                    job_id, i, total, chunk_time, _rss_mb(),
+                )
                 transcript = result.text.strip() if hasattr(result, "text") else result.get("text", "").strip()
+                del result  # release large result object before clearing caches
                 transcripts.append(transcript)
+
+                # Log MLX peak memory and clear caches
+                try:
+                    import mlx.core as mx
+                    peak_gb = mx.get_peak_memory() / 1e9
+                    logger.info("mlx_peak_memory_gb after chunk %d: %.2f", i, peak_gb)
+                    mx.clear_cache()
+                    after_cache_rss = _rss_mb()
+                    logger.info("mlx_cache_cleared chunk %d rss_mb=%.1f", i, after_cache_rss)
+                except Exception as e:
+                    logger.info("mlx memory logging unavailable: %s", e)
+
                 logger.info(
                     "chunk_done job_id=%s chunk=%d/%d duration=%.2fs",
                     job_id, i, total, chunk_time,
                 )
                 if progress_callback:
+                    logger.info("progress_callback job_id=%s chunk=%d/%d stage=transcribed", job_id, i, total)
                     progress_callback(job_id, i, total, "transcribed")
             audio_duration = self._get_audio_duration(audio_path)
             return "\n\n".join(transcripts), total_transcribe_time, audio_duration
@@ -138,7 +171,7 @@ class TranscriptionModel:
             shutil.rmtree(temp_dir, ignore_errors=True)
 
     def _split_audio_chunks(self, audio_path: str, output_dir: str,
-                            chunk_duration_s: int) -> list[str]:
+                            chunk_duration_s: int, job_id: str | None = None) -> list[str]:
         """Split audio into chunk_duration_s WAV files. Returns sorted list of chunk paths."""
         ffmpeg_path = _get_ffmpeg_path()
         if ffmpeg_path is None:
@@ -158,7 +191,17 @@ class TranscriptionModel:
         except subprocess.CalledProcessError as e:
             raise RuntimeError(f"ffmpeg split failed: {e.stderr}") from e
         chunks = sorted(Path(output_dir).glob("chunk_*.wav"))
-        return [str(c) for c in chunks]
+        chunk_paths = [str(c) for c in chunks]
+        source_dur = self._get_audio_duration(audio_path)
+        logger.info(
+            "chunking_summary job_id=%s chunks=%d chunk_duration_s=%d source_duration=%.2fs paths=%s",
+            job_id, len(chunk_paths), chunk_duration_s, source_dur, chunk_paths[:5],
+        )
+        for cp in chunk_paths[:5]:
+            size = os.path.getsize(cp)
+            dur = self._get_audio_duration(cp)
+            logger.info("  chunk %s size=%d bytes duration=%.2fs", cp, size, dur)
+        return chunk_paths
 
     def _get_audio_duration(self, audio_path: str) -> float:
         """Get duration in seconds. WAV uses stdlib; other formats try optional soundfile, else 0.0."""
