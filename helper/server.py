@@ -13,8 +13,15 @@ from pathlib import Path
 # Ensure helper dir is on path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from model import TranscriptionModel
+from model import TranscriptionModel, SenseVoiceBackend
 import protocol
+
+
+_ASR_BACKEND = os.environ.get("TRANSCRIPTOR_ASR_BACKEND", "sensevoice")
+_MLX_MODEL_ID = os.environ.get("TRANSCRIPTOR_MLX_MODEL_ID", "mlx-community/GLM-ASR-Nano-2512-4bit")
+_SENSEVOICE_MODEL = os.environ.get("TRANSCRIPTOR_SENSEVOICE_MODEL", "FunAudioLLM/SenseVoiceSmall")
+_SENSEVOICE_LANGUAGE = os.environ.get("TRANSCRIPTOR_SENSEVOICE_LANGUAGE", "yue")
+_SENSEVOICE_DEVICE = os.environ.get("TRANSCRIPTOR_SENSEVOICE_DEVICE", "cpu")
 
 
 SOCKET_PATH = "/tmp/cantonese-transcriptor.sock"
@@ -30,7 +37,18 @@ logger = logging.getLogger("asr-helper")
 
 class Server:
     def __init__(self):
-        self._model = TranscriptionModel()
+        if _ASR_BACKEND == "sensevoice":
+            self._model = SenseVoiceBackend(
+                model_id=_SENSEVOICE_MODEL,
+                language=_SENSEVOICE_LANGUAGE,
+                device=_SENSEVOICE_DEVICE,
+            )
+            self._backend_name = "SenseVoice"
+        elif _ASR_BACKEND == "mlx":
+            self._model = TranscriptionModel(model_id=_MLX_MODEL_ID)
+            self._backend_name = "MLX-GLM"
+        else:
+            raise RuntimeError(f"Unknown TRANSCRIPTOR_ASR_BACKEND: {_ASR_BACKEND}")
         self._running = False
         self._socket: socket.socket | None = None
         self._in_progress = False
@@ -194,18 +212,15 @@ class Server:
         audio_path = params["audio_path"]
         job_id = params["job_id"]
 
+        def progress_callback(jid, chunk, total, stage):
+            notify = protocol.build_progress_notification(jid, chunk, total, stage)
+            conn.sendall((json.dumps(notify) + "\n").encode("utf-8"))
+
         try:
             self._in_progress = True
-            duration = self._model._get_audio_duration(audio_path)
-            if duration > 0 and duration <= 90:
-                transcript, transcribe_time, audio_duration = self._model.transcribe(audio_path)
-            else:
-                def progress_callback(jid, chunk, total, stage):
-                    notify = protocol.build_progress_notification(jid, chunk, total, stage)
-                    conn.sendall((json.dumps(notify) + "\n").encode("utf-8"))
-                transcript, transcribe_time, audio_duration = self._model.transcribe_chunked(
-                    audio_path, job_id=job_id, progress_callback=progress_callback
-                )
+            transcript, transcribe_time, audio_duration = self._model.transcribe_file(
+                audio_path, job_id=job_id, progress_callback=progress_callback
+            )
             rtf = transcribe_time / audio_duration if audio_duration > 0 else 0.0
             timing = {
                 "model_load_time_s": self._model.load_time_s or 0.0,
@@ -216,6 +231,10 @@ class Server:
             resp = protocol.build_success_response(job_id, transcript, timing, data.get("id"))
             conn.sendall((json.dumps(resp) + "\n").encode("utf-8"))
         except Exception as e:
+            logger.exception(
+                "File transcription failed job_id=%s audio_path=%s",
+                job_id, audio_path,
+            )
             resp = protocol.build_error_response(-32603, str(e), job_id, data.get("id"))
             conn.sendall((json.dumps(resp) + "\n").encode("utf-8"))
         finally:
@@ -236,7 +255,12 @@ if __name__ == "__main__":
 
     load_time = server.load_model()
     server.start()  # bind socket before emitting ready
-    print("ready", file=sys.stderr, flush=True)
+    if _ASR_BACKEND == "sensevoice":
+        logger.info("Backend: %s model=%s device=%s language=%s",
+            server._backend_name, _SENSEVOICE_MODEL, _SENSEVOICE_DEVICE, _SENSEVOICE_LANGUAGE)
+    elif _ASR_BACKEND == "mlx":
+        logger.info("Backend: %s model=%s", server._backend_name, _MLX_MODEL_ID)
     logger.info("Model ready (load time %.2fs), socket listening", load_time)
+    print("ready", file=sys.stderr, flush=True)
     server.run()    # blocks until _running goes false
     server.stop()   # clean up socket after run loop exits

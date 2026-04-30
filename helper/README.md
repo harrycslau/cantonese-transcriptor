@@ -106,11 +106,22 @@ kill <pid>  # SIGTERM / SIGINT for graceful shutdown
 HF_HUB_OFFLINE=1 python server.py &
 ```
 
+### Environment Variables
+
+```bash
+TRANSCRIPTOR_ASR_BACKEND=sensevoice  # default: sensevoice; alternatives: mlx
+TRANSCRIPTOR_SENSEVOICE_MODEL=FunAudioLLM/SenseVoiceSmall
+TRANSCRIPTOR_SENSEVOICE_LANGUAGE=yue
+TRANSCRIPTOR_SENSEVOICE_DEVICE=cpu
+TRANSCRIPTOR_MLX_MODEL_ID=mlx-community/GLM-ASR-Nano-2512-4bit
+TRANSCRIPTOR_FFMPEG_PATH=/opt/homebrew/bin/ffmpeg  # optional, not used by SenseVoice primary path
+```
+
 ### Notes
 
 - Socket: `/tmp/cantonese-transcriptor.sock` (persistent connections, NDJSON framing)
 - Logs: `/tmp/cantonese-transcriptor.log`
 - Stdout is unused — all protocol traffic goes over the socket.
 - `model_load_time_s` is returned in every response; it is the startup load time, not per-job.
-- The macOS app accepts WAV, MP3, and M4A. Decoding depends on the helper/MLX audio stack.
+- The macOS app accepts WAV, MP3, and M4A. Decoding depends on the helper audio stack.
 - Duration timing is accurate for WAV; MP3 and M4A may return 0.0 if duration cannot be determined.

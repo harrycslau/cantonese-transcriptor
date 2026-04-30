@@ -9,9 +9,6 @@ import time
 import wave
 from pathlib import Path
 
-from mlx_audio.stt.utils import load_model
-from mlx_audio.stt.generate import generate_transcription
-
 
 logger = logging.getLogger("asr-helper")
 
@@ -54,6 +51,117 @@ def _rss_mb() -> float:
         return 0.0
 
 
+class SenseVoiceBackend:
+    """
+    FunASR SenseVoice backend.
+
+    Loads FunAudioLLM/SenseVoiceSmall with VAD for long-audio segmentation.
+    """
+
+    def __init__(
+        self,
+        model_id: str = "FunAudioLLM/SenseVoiceSmall",
+        language: str = "yue",
+        device: str = "cpu",
+    ):
+        self._model = None
+        self._model_id = model_id
+        self._language = language
+        self._device = device
+        self._load_time_s: float | None = None
+
+    @property
+    def load_time_s(self) -> float | None:
+        return self._load_time_s
+
+    def load(self) -> None:
+        from funasr import AutoModel
+        logger.info(
+            "Loading SenseVoice model=%s device=%s language=%s",
+            self._model_id, self._device, self._language,
+        )
+        t0 = time.perf_counter()
+        self._model = AutoModel(
+            model=self._model_id,
+            vad_model="fsmn-vad",
+            vad_kwargs={"max_single_segment_time": 30000},
+            hub="hf",
+            device=self._device,
+        )
+        self._load_time_s = time.perf_counter() - t0
+        logger.info("SenseVoice loaded in %.2fs", self._load_time_s)
+
+    def _extract_text(self, res) -> str:
+        """Normalize FunASR generate() output to a single text string."""
+        from funasr.utils.postprocess_utils import rich_transcription_postprocess
+        if isinstance(res, list):
+            parts = []
+            for item in res:
+                txt = item.get("text", "") if isinstance(item, dict) else str(item)
+                parts.append(txt)
+            return rich_transcription_postprocess("".join(parts))
+        elif isinstance(res, dict):
+            return rich_transcription_postprocess(res.get("text", ""))
+        return rich_transcription_postprocess(str(res)) if res else ""
+
+    def transcribe(self, audio_path: str) -> tuple[str, float, float]:
+        """Transcribe short audio (PTT/manual recording)."""
+        if self._model is None:
+            raise RuntimeError("Model not loaded. Call load() first.")
+        t0 = time.perf_counter()
+        audio_duration = self._get_audio_duration(audio_path)
+        res = self._model.generate(
+            input=audio_path,
+            cache={},
+            language=self._language,
+            use_itn=True,
+            batch_size_s=60,
+            merge_vad=True,
+            merge_length_s=15,
+        )
+        transcribe_time = time.perf_counter() - t0
+        text = self._extract_text(res)
+        return text.strip(), transcribe_time, audio_duration
+
+    def transcribe_file(self, audio_path: str, job_id=None, progress_callback=None) -> tuple[str, float, float]:
+        """
+        Transcribe long audio using VAD segmentation.
+        job_id and progress_callback are accepted for interface compatibility; not used by SenseVoice.
+        Returns (transcript, transcribe_time_s, audio_duration_s).
+        """
+        if self._model is None:
+            raise RuntimeError("Model not loaded. Call load() first.")
+        t0 = time.perf_counter()
+        audio_duration = self._get_audio_duration(audio_path)
+        res = self._model.generate(
+            input=audio_path,
+            cache={},
+            language=self._language,
+            use_itn=True,
+            batch_size_s=60,
+            merge_vad=True,
+            merge_length_s=15,
+        )
+        transcribe_time = time.perf_counter() - t0
+        text = self._extract_text(res)
+        return text.strip(), transcribe_time, audio_duration
+
+    def _get_audio_duration(self, audio_path: str) -> float:
+        ext = Path(audio_path).suffix.lower()
+        if ext == ".wav":
+            try:
+                with wave.open(audio_path) as wf:
+                    return wf.getnframes() / wf.getframerate()
+            except Exception:
+                pass
+        try:
+            import soundfile as sf
+            info = sf.info(audio_path)
+            return info.frames / info.samplerate
+        except Exception:
+            return 0.0
+
+
 class TranscriptionModel:
     """Wraps the MLX ASR model with load and transcribe timing."""
 
@@ -67,6 +175,7 @@ class TranscriptionModel:
         return self._load_time_s
 
     def load(self) -> None:
+        from mlx_audio.stt.utils import load_model
         logger.info("Loading model %s...", self._model_id)
         t0 = time.perf_counter()
         self._model = load_model(self._model_id)
@@ -79,6 +188,7 @@ class TranscriptionModel:
 
         Returns (transcript, transcribe_time_s, audio_duration_s).
         """
+        from mlx_audio.stt.generate import generate_transcription
         if self._model is None:
             raise RuntimeError("Model not loaded. Call load() first.")
 
@@ -94,6 +204,10 @@ class TranscriptionModel:
         transcript = result.text.strip() if hasattr(result, "text") else result.get("text", "").strip()
 
         return transcript, transcribe_time, audio_duration
+
+    def transcribe_file(self, audio_path: str, job_id=None, progress_callback=None) -> tuple[str, float, float]:
+        """File transcription compatibility method — delegates to transcribe_chunked."""
+        return self.transcribe_chunked(audio_path, job_id=job_id, progress_callback=progress_callback)
 
     def transcribe_chunked(self, audio_path: str, job_id: str = None,
                            progress_callback=None) -> tuple[str, float, float]:
@@ -128,6 +242,7 @@ class TranscriptionModel:
                 if progress_callback:
                     logger.info("progress_callback job_id=%s chunk=%d/%d stage=processing", job_id, i, total)
                     progress_callback(job_id, i, total, "processing")
+                from mlx_audio.stt.generate import generate_transcription
                 t0 = time.perf_counter()
                 output_base = self._make_output_base(chunk_path)
                 try:
