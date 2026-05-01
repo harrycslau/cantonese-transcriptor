@@ -117,6 +117,7 @@ class SenseVoiceBackend:
             vad_kwargs={"max_single_segment_time": 30000},
             hub="hf",
             device=self._device,
+            disable_pbar=True,
         )
         self._load_time_s = time.perf_counter() - t0
         logger.info("SenseVoice loaded in %.2fs", self._load_time_s)
