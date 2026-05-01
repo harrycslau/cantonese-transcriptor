@@ -59,3 +59,25 @@ def build_progress_notification(job_id: str, chunk: int, total: int, stage: str)
         "method": "transcribe_progress",
         "params": {"job_id": job_id, "chunk": chunk, "total": total, "stage": stage},
     }
+
+
+def build_success_response_diarized(
+    job_id: str,
+    transcript: str,
+    segments: list[dict],
+    cancelled: bool,
+    timing: dict[str, float],
+    rid: int | str,
+) -> dict[str, Any]:
+    """Build a JSON-RPC success response for diarized transcription."""
+    return {
+        "jsonrpc": "2.0",
+        "result": {
+            "job_id": job_id,
+            "transcript": transcript,
+            "segments": segments,
+            "cancelled": cancelled,
+            "timing": timing,
+        },
+        "id": rid,
+    }

@@ -106,3 +106,58 @@ struct ChunkedTranscribeRequest: Codable {
         self.id = 1
     }
 }
+
+// MARK: - Diarized Transcription
+
+struct DiarizedTranscribeRequest: Codable {
+    let jsonrpc: String
+    let method: String
+    let params: DiarizedTranscribeParams
+    let id: Int
+
+    init(params: DiarizedTranscribeParams) {
+        self.jsonrpc = "2.0"
+        self.method = "transcribe_with_diarization"
+        self.params = params
+        self.id = 1
+    }
+}
+
+struct DiarizedTranscribeParams: Codable {
+    let audio_path: String
+    let job_id: String
+    let num_speakers: Int
+}
+
+struct DiarizedSegment: Codable {
+    let speaker: String
+    let start: Double
+    let end: Double
+    let duration: Double
+    let transcript: String
+}
+
+struct DiarizedTiming: Codable {
+    let diarization_time_s: Double
+    let slice_time_s: Double
+    let asr_model_time_s: Double
+    let segment_loop_time_s: Double
+    let total_time_s: Double
+    let audio_duration_s: Double
+    let real_time_factor: Double
+}
+
+struct DiarizedTranscribeResult: Codable {
+    let job_id: String
+    let transcript: String
+    let segments: [DiarizedSegment]
+    let cancelled: Bool
+    let timing: DiarizedTiming
+}
+
+struct DiarizedTranscribeResponse: Codable {
+    let jsonrpc: String
+    let result: DiarizedTranscribeResult?
+    let error: JSONRPCError?
+    let id: Int
+}

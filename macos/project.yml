@@ -52,3 +52,4 @@ schemes:
       environmentVariables:
         TRANSCRIPTOR_HELPER_PATH: /Users/harrycslau/Documents/GitRepositories/cantonese-transcriptor/helper/server.py
         TRANSCRIPTOR_PYTHON: /Users/harrycslau/miniconda3/bin/python3
+        PYANNOTE_PYTHON: /Users/harrycslau/miniconda3/envs/pyannote-bench/bin/python

@@ -65,6 +65,11 @@
       </CommandLineArguments>
       <EnvironmentVariables>
          <EnvironmentVariable
+            key = "PYANNOTE_PYTHON"
+            value = "/Users/harrycslau/miniconda3/envs/pyannote-bench/bin/python"
+            isEnabled = "YES">
+         </EnvironmentVariable>
+         <EnvironmentVariable
             key = "TRANSCRIPTOR_HELPER_PATH"
             value = "/Users/harrycslau/Documents/GitRepositories/cantonese-transcriptor/helper/server.py"
             isEnabled = "YES">

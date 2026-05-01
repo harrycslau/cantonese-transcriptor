@@ -42,6 +42,8 @@ class TranscriptionManager: ObservableObject {
     @Published var transcribingSource: TranscribingSource = .recording
     @Published var transcribingElapsed: TimeInterval = 0
     @Published var chunkProgress: ChunkProgress?
+    @Published var enableDiarization: Bool = false
+    @Published var diarizationSpeakerCount: Int = -1
 
     private var lastInsertionContext: InsertionContext?
 
@@ -175,6 +177,66 @@ class TranscriptionManager: ObservableObject {
             }
             if let tempPath {
                 try? FileManager.default.removeItem(atPath: tempPath)
+            }
+        }
+    }
+
+    func transcribeWithDiarization() {
+        guard case .fileSelected(let url) = state else { return }
+        var audioPath: String?
+        do {
+            audioPath = try prepareAudioForHelper(url)
+        } catch {
+            state = .error("Failed to prepare audio: \(error.localizedDescription)")
+            return
+        }
+        guard let audioPath else { return }
+        clearInsertionState()
+        transcribingSource = .file
+        chunkProgress = nil
+        startTranscribingTimer()
+        state = .transcribing
+
+        Task { [audioPath] in
+            defer {
+                if audioPath.hasPrefix(NSTemporaryDirectory()) {
+                    try? FileManager.default.removeItem(atPath: audioPath)
+                }
+            }
+            do {
+                let result = try await client.transcribeWithDiarization(
+                    audioPath: audioPath,
+                    numSpeakers: diarizationSpeakerCount
+                ) { progress in
+                    Task { @MainActor in
+                        self.chunkProgress = progress
+                    }
+                }
+                stopTranscribingTimer()
+                chunkProgress = nil
+                state = .success(TranscribeResult(
+                    job_id: result.job_id,
+                    transcript: result.transcript,
+                    timing: TimingInfo(
+                        model_load_time_s: 0,
+                        transcribe_time_s: result.timing.segment_loop_time_s,
+                        audio_duration_s: result.timing.audio_duration_s,
+                        real_time_factor: result.timing.audio_duration_s > 0
+                            ? result.timing.total_time_s / result.timing.audio_duration_s : 0
+                    )
+                ))
+            } catch let error as SocketClientError {
+                stopTranscribingTimer()
+                chunkProgress = nil
+                if case .connectionTimedOut = error {
+                    state = .error("Helper is still processing or did not respond. Large files can take several minutes.")
+                } else {
+                    state = .error(error.localizedDescription)
+                }
+            } catch {
+                stopTranscribingTimer()
+                chunkProgress = nil
+                state = .error(error.localizedDescription)
             }
         }
     }
@@ -548,7 +610,11 @@ struct ContentView: View {
                     ProgressView()
                     if manager.transcribingSource == .file {
                         if let progress = manager.chunkProgress {
-                            Text("Transcribing chunk \(progress.current) of \(progress.total) (\(progress.stage))... \(formatDuration(manager.transcribingElapsed))")
+                            if progress.stage == "diarizing" {
+                                Text("Analyzing speakers... \(formatDuration(manager.transcribingElapsed))")
+                            } else {
+                                Text("Transcribing segment \(progress.current) of \(progress.total)... \(formatDuration(manager.transcribingElapsed))")
+                            }
                         } else {
                             Text("Transcribing file... \(formatDuration(manager.transcribingElapsed)) elapsed")
                         }
@@ -570,6 +636,29 @@ struct ContentView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .lineLimit(1)
+
+                    if manager.enableDiarization {
+                        HStack {
+                            Text("Speakers:")
+                                .font(.caption)
+                            Picker("Speakers", selection: $manager.diarizationSpeakerCount) {
+                                Text("Auto").tag(-1)
+                                Text("2").tag(2)
+                                Text("3").tag(3)
+                                Text("4").tag(4)
+                                Text("5").tag(5)
+                            }
+                            .pickerStyle(.segmented)
+                            .frame(width: 200)
+                        }
+                        .padding(.top, 4)
+                        Text("Speaker diarization can take about as long as the audio duration.")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Text("For a 30 minute file, this may take 30-60 minutes.")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 24)
@@ -664,6 +753,13 @@ struct ContentView: View {
             .buttonStyle(.bordered)
             .disabled(manager.isRecording || manager.isTranscribing)
 
+            Toggle("Speaker diarization", isOn: $manager.enableDiarization)
+                .toggleStyle(.checkbox)
+                .font(.caption)
+                .disabled(manager.isTranscribing)
+
+            Spacer()
+
             if case .idle = manager.state {
                 Button("Record") {
                     manager.startRecording(source: .manual, targetApp: nil)
@@ -681,7 +777,11 @@ struct ContentView: View {
 
             if manager.canTranscribe {
                 Button("Transcribe") {
-                    manager.transcribeChunked()
+                    if manager.enableDiarization {
+                        manager.transcribeWithDiarization()
+                    } else {
+                        manager.transcribeChunked()
+                    }
                 }
                 .buttonStyle(.borderedProminent)
             }
