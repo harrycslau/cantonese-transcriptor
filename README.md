@@ -84,6 +84,33 @@ open Transcriptor.app
 Then select a WAV, MP3, or M4A file and transcribe. Speaker diarization can be
 enabled from the app UI after the optional pyannote setup has completed.
 
+### Install to Applications
+
+To install the app like a normal macOS app, copy it from the distribution folder
+to `/Applications`:
+
+```bash
+cp -R Transcriptor.app /Applications/
+open /Applications/Transcriptor.app
+```
+
+If you built the app locally with `scripts/package_portable_app.sh`, the
+distribution app is here:
+
+```bash
+cp -R /private/tmp/cantonese-transcriptor-release/Transcriptor-distribution/Transcriptor.app /Applications/
+open /Applications/Transcriptor.app
+```
+
+The Python environments still live in:
+
+```text
+~/Library/Application Support/Transcriptor/
+```
+
+So run `./setup_transcriptor_env.sh` once from the distribution folder before
+using the installed app on a new Mac.
+
 ### Installed Files
 
 The app looks for helper dependencies in this order:

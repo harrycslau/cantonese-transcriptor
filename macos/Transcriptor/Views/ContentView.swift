@@ -515,16 +515,16 @@ struct ContentView: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
 
-            if hotkeyManager.permissionWarning != nil {
+            if let warning = hotkeyManager.permissionWarning {
                 Button {
                     openAccessibilitySettings()
                 } label: {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.caption2)
+                    Label("Enable Accessibility", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
                         .foregroundColor(.orange)
                 }
-                .buttonStyle(.plain)
-                .help("Accessibility permission needed for auto-insert")
+                .buttonStyle(.borderless)
+                .help(warning)
             }
 
             Spacer()
@@ -587,6 +587,20 @@ struct ContentView: View {
                     Text("Hold ⌃ to dictate")
                         .font(.body)
                         .foregroundColor(.secondary)
+                    if hotkeyManager.permissionWarning != nil {
+                        Text("Enable Accessibility to paste transcripts into other apps.")
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                            .multilineTextAlignment(.center)
+                        Button {
+                            openAccessibilitySettings()
+                        } label: {
+                            Label("Open Accessibility Settings", systemImage: "gear")
+                        }
+                        .font(.caption)
+                        .buttonStyle(.bordered)
+                        .padding(.top, 4)
+                    }
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 24)
@@ -652,7 +666,7 @@ struct ContentView: View {
                             .frame(width: 200)
                         }
                         .padding(.top, 4)
-                        Text("Speaker diarization can take about as long as the audio duration.")
+                        Text("Speaker labeling can take about as long as the audio duration.")
                             .font(.caption2)
                             .foregroundColor(.secondary)
                         Text("For a 30 minute file, this may take 30-60 minutes.")
@@ -753,7 +767,7 @@ struct ContentView: View {
             .buttonStyle(.bordered)
             .disabled(manager.isRecording || manager.isTranscribing)
 
-            Toggle("Speaker diarization", isOn: $manager.enableDiarization)
+            Toggle("Label speakers", isOn: $manager.enableDiarization)
                 .toggleStyle(.checkbox)
                 .font(.caption)
                 .disabled(manager.isTranscribing)

@@ -11,8 +11,15 @@ class HotkeyManager: ObservableObject {
 
     // Track Left Control state to detect up→down and down→up transitions
     private var isLeftControlDown = false
+    private var isPlainLeftControlPress = false
 
     private let leftControlKeyCode: UInt16 = 59  // 62 = Right Control (ignored)
+    private let ignoredModifierFlags: NSEvent.ModifierFlags = [
+        .capsLock,
+        .numericPad,
+        .function,
+        .deviceIndependentFlagsMask,
+    ]
 
     func startListening(transcriptionManager: TranscriptionManager) {
         guard !isListening else { return }
@@ -49,6 +56,7 @@ class HotkeyManager: ObservableObject {
         }
         isListening = false
         isLeftControlDown = false
+        isPlainLeftControlPress = false
     }
 
     private func handleFlagsChanged(_ event: NSEvent) {
@@ -56,18 +64,29 @@ class HotkeyManager: ObservableObject {
         guard let manager = transcriptionManager else { return }
 
         let controlDown = event.modifierFlags.contains(.control)
+        let activeModifiers = event.modifierFlags.subtracting(ignoredModifierFlags)
+        let isControlOnly = activeModifiers == .control
 
         // Transition: up → down = start recording
         if controlDown && !isLeftControlDown {
             isLeftControlDown = true
+            isPlainLeftControlPress = isControlOnly
+            guard isPlainLeftControlPress else { return }
             if manager.isRecording || manager.isTranscribing { return }
             let frontmost = NSWorkspace.shared.frontmostApplication
             manager.startRecording(source: .pushToTalk, targetApp: frontmost)
         }
+        // If another modifier joins while Control is held, this is a system/app
+        // shortcut, not push-to-talk.
+        else if controlDown && isLeftControlDown && !isControlOnly {
+            isPlainLeftControlPress = false
+        }
         // Transition: down → up = stop and transcribe
         else if !controlDown && isLeftControlDown {
+            let shouldStopRecording = isPlainLeftControlPress
             isLeftControlDown = false
-            guard manager.isRecording else { return }
+            isPlainLeftControlPress = false
+            guard shouldStopRecording, manager.isRecording else { return }
             manager.stopAndTranscribe()
         }
     }

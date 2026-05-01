@@ -24,7 +24,7 @@ struct TranscriptorApp: App {
     @State private var statusBarController: StatusBarController?
 
     var body: some Scene {
-        WindowGroup("Transcriptor", id: "main") {
+        WindowGroup("Cantonese Transcriptor", id: "main") {
             ContentView()
                 .environmentObject(helperManager)
                 .environmentObject(transcriptionManager)
@@ -45,7 +45,6 @@ struct TranscriptorApp: App {
                     }
                 }
         }
-        .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
         .defaultSize(width: 520, height: 480)
     }
