@@ -40,7 +40,7 @@ class HelperManager: ObservableObject {
         helperStderr = ""
 
         guard let helperPath = resolveHelperPath() else {
-            state = .failed("TRANSCRIPTOR_HELPER_PATH is not set — configure in Xcode Scheme")
+            state = .failed("Helper script not found. Set TRANSCRIPTOR_HELPER_PATH or bundle helper/server.py in app Resources.")
             return
         }
         guard FileManager.default.fileExists(atPath: helperPath) else {
@@ -51,6 +51,7 @@ class HelperManager: ObservableObject {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: resolvePythonPath())
         process.arguments = [helperPath]
+        process.environment = resolveHelperEnvironment()
 
         let stderrPipe = Pipe()
         process.standardError = stderrPipe
@@ -154,17 +155,96 @@ class HelperManager: ObservableObject {
     }
 
     private func resolveHelperPath() -> String? {
-        guard let envPath = getenv("TRANSCRIPTOR_HELPER_PATH") else {
-            return nil
+        if let envPath = getenv("TRANSCRIPTOR_HELPER_PATH") {
+            return String(cString: envPath)
         }
-        return String(cString: envPath)
+        return Bundle.main.resourceURL?
+            .appendingPathComponent("helper")
+            .appendingPathComponent("server.py")
+            .path
     }
 
     private func resolvePythonPath() -> String {
+        // 1. Explicit env var
         if let envPath = getenv("TRANSCRIPTOR_PYTHON") {
             return String(cString: envPath)
         }
+
+        // 2. App Support main env
+        let appSupportMain = NSHomeDirectory()
+            + "/Library/Application Support/Transcriptor/envs/main/bin/python"
+        if FileManager.default.fileExists(atPath: appSupportMain) {
+            return appSupportMain
+        }
+
+        // 3. Legacy bundled python-env (bin/python first, then bin/python3)
+        if let bundledPython = Bundle.main.resourceURL?
+            .appendingPathComponent("python-env")
+            .appendingPathComponent("bin")
+            .appendingPathComponent("python")
+            .path,
+           FileManager.default.fileExists(atPath: bundledPython) {
+            return bundledPython
+        }
+        if let bundledPython3 = Bundle.main.resourceURL?
+            .appendingPathComponent("python-env")
+            .appendingPathComponent("bin")
+            .appendingPathComponent("python3")
+            .path,
+           FileManager.default.fileExists(atPath: bundledPython3) {
+            return bundledPython3
+        }
+
+        // 4. Last-resort dev fallback
         return "/usr/bin/python3"
+    }
+
+    private func resolveHelperEnvironment() -> [String: String] {
+        var environment = ProcessInfo.processInfo.environment
+
+        // PYANNOTE_PYTHON — priority order:
+        // 1. already set env var
+        // 2. App Support pyannote env
+        // 3. legacy bundled pyannote-env
+        if environment["PYANNOTE_PYTHON"] == nil {
+            let appSupportPyannote = NSHomeDirectory()
+                + "/Library/Application Support/Transcriptor/envs/pyannote/bin/python"
+            if FileManager.default.fileExists(atPath: appSupportPyannote) {
+                environment["PYANNOTE_PYTHON"] = appSupportPyannote
+            } else if let bundledPyannote = Bundle.main.resourceURL?
+                .appendingPathComponent("pyannote-env")
+                .appendingPathComponent("bin")
+                .appendingPathComponent("python")
+                .path,
+                      FileManager.default.fileExists(atPath: bundledPyannote) {
+                environment["PYANNOTE_PYTHON"] = bundledPyannote
+            }
+        }
+
+        // App-specific cache directories
+        let cacheDir = NSHomeDirectory() + "/Library/Application Support/Transcriptor/cache"
+        environment["HF_HOME"] = cacheDir + "/huggingface"
+        environment["TRANSFORMERS_CACHE"] = cacheDir + "/huggingface"
+        environment["MODELSCOPE_CACHE"] = cacheDir + "/modelscope"
+        environment["MPLCONFIGDIR"] = cacheDir + "/matplotlib"
+
+        // Create cache directories before the helper starts
+        let fileManager = FileManager.default
+        let cacheDirs = [
+            cacheDir,
+            cacheDir + "/huggingface",
+            cacheDir + "/modelscope",
+            cacheDir + "/matplotlib",
+        ]
+        for dir in cacheDirs {
+            try? fileManager.createDirectory(
+                atPath: dir,
+                withIntermediateDirectories: true,
+                attributes: nil
+            )
+        }
+
+        return environment
     }
 
     private func pingHelper() async -> Bool {
