@@ -14,11 +14,11 @@ class HotkeyManager: ObservableObject {
     private var isPlainLeftControlPress = false
 
     private let leftControlKeyCode: UInt16 = 59  // 62 = Right Control (ignored)
-    private let ignoredModifierFlags: NSEvent.ModifierFlags = [
-        .capsLock,
-        .numericPad,
-        .function,
-        .deviceIndependentFlagsMask,
+    private let shortcutModifierFlags: NSEvent.ModifierFlags = [
+        .control,
+        .shift,
+        .option,
+        .command,
     ]
 
     func startListening(transcriptionManager: TranscriptionManager) {
@@ -64,7 +64,7 @@ class HotkeyManager: ObservableObject {
         guard let manager = transcriptionManager else { return }
 
         let controlDown = event.modifierFlags.contains(.control)
-        let activeModifiers = event.modifierFlags.subtracting(ignoredModifierFlags)
+        let activeModifiers = event.modifierFlags.intersection(shortcutModifierFlags)
         let isControlOnly = activeModifiers == .control
 
         // Transition: up → down = start recording
